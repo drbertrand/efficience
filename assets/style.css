@@ -147,3 +147,16 @@ td.eff-st-warn { color: #9a5b1e; } td.eff-st-info { color: #3a5683; } td.eff-st-
 .eff-chat-in { width: 100%; min-height: 90px; font-family: inherit; resize: vertical; }
 .eff-chat-apply { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .eff-chat-in { min-height: 64px; font-family: var(--body); font-size: .92rem; }
+
+/* Volets d'un bloc en sous-onglets */
+.eff-subtabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--line); margin: 14px 0 18px; }
+.eff-subtab { font: inherit; cursor: pointer; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 10px 16px 9px; color: var(--muted); font-weight: 500; display: flex; align-items: baseline; gap: 8px; }
+.eff-subtab:hover { color: var(--ink); }
+.eff-subtab.on { color: var(--accent); border-bottom-color: var(--accent); }
+.eff-subtab small { font-size: .75rem; font-weight: 400; color: var(--muted); background: var(--bg, #f3f5f4); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.eff-pane > h3:first-child { margin-top: 0; }
+@media print {
+  .eff-subtabs { display: none; }
+  .eff-pane[hidden] { display: block !important; }
+  .eff-pane[data-pane=dotation] { break-before: page; }
+}

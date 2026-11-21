@@ -415,6 +415,9 @@
     return el('div', {}, wrap, leg);
   };
 
+  /* Volets affichés en sous-onglets dans chaque UF ou regroupement. Pour un futur axe de travail : ajouter {id, label} ici et remplir panes[id] dans renderDashboard. */
+  E.VOLETS = [{id: 'couts', label: 'Coûts et références'}, {id: 'dotation', label: 'Dotation'}];
+
   E.renderDashboard = (root, d, opts) => {
     opts = opts || {};
     const c = E.compute(d);
@@ -440,10 +443,21 @@
       sec.append(el('h2', {class: 'eff-reg-h', text: titre}),
         el('p', {class: 'eff-note'}, g.ufs.map((u, i) => [i ? ' · ' : '', el('span', {class: u.recue ? null : 'eff-off', text: `${u.uf} ${u.nom}` + (u.recue ? '' : ' (non transmise)')})])));
 
+      /* Volets du bloc, en sous-onglets (liste extensible : ajouter une entrée à E.VOLETS et remplir son panneau). */
+      const panes = {};
+      E.VOLETS.forEach((v) => { panes[v.id] = el('div', {class: 'eff-pane', 'data-pane': v.id, role: 'tabpanel'}); });
+      const pC = panes.couts, pD = panes.dotation;
+      const dtInfo = c.dotation(g.code);
+      const aRevoir = dtInfo ? dtInfo.rows.filter((r) => r.statut === 'À augmenter' || r.statut === 'À réduire' || r.statut === 'Sans consommation').length : null;
+      const sub = el('nav', {class: 'eff-subtabs', role: 'tablist', 'aria-label': 'Volets de ' + g.code}, E.VOLETS.map((v) => el('button', {type: 'button', role: 'tab', class: 'eff-subtab', 'data-pane': v.id},
+        el('span', {text: v.label}),
+        v.id === 'dotation' ? el('small', {text: dtInfo ? aRevoir + ' à revoir' : 'non transmise'}) : null)));
+      sec.append(sub, ...E.VOLETS.map((v) => panes[v.id]));
+
       /* 1. Coût global par type de produit */
       const famTile = (f, label, susLabel) => el('div', {class: 'eff-card'}, el('div', {class: 'eff-tl', text: label}), el('div', {class: 'eff-tv', text: E.eur(g.fam[f].total)}),
         el('div', {class: 'eff-small', text: g.fam[f].sus ? `dont ${E.eur(g.fam[f].sus)} ${susLabel}` : 'entièrement à la charge de l’hôpital'}));
-      sec.append(el('h3', {text: '1. Coût global annualisé par type de produit'}),
+      pC.append(el('h3', {text: '1. Coût global annualisé par type de produit'}),
         el('div', {class: 'eff-tiles'},
           el('div', {class: 'eff-card eff-card-main'}, el('div', {class: 'eff-tl', text: 'Coût global annualisé'}), el('div', {class: 'eff-tv', text: E.eur(g.total)}),
             el('div', {class: 'eff-small', text: `${E.eur(g.total - g.sus)} à la charge de l’hôpital · ${E.eur(g.sus)} remboursés en sus`})),
@@ -475,7 +489,7 @@
       };
       selF.addEventListener('change', showRefs); chk.addEventListener('change', showRefs);
       more.addEventListener('click', () => { all = !all; showRefs(); });
-      sec.append(el('h3', {text: '2. Références par coût global décroissant'}),
+      pC.append(el('h3', {text: '2. Références par coût global décroissant'}),
         el('p', {class: 'eff-note', text: 'Les deux pourcentages se recalculent selon le filtre : % du total = part de la référence dans le total du tableau affiché (indiqué au-dessus du tableau) ; % cumulé = part atteinte de la première référence jusqu’à la ligne.'}),
         el('div', {class: 'eff-ctl'}, selF, el('label', {class: 'eff-check'}, chk, 'Inclure les références remboursées en sus du séjour (hors GHS, LPPR)')),
         info, host, el('div', {class: 'eff-row'}, more));
@@ -492,25 +506,25 @@
             (x.sources || []).length ? el('span', {class: 'eff-notepad-src'}, 'Sources : ', x.sources.map((s, i) => [i ? ' · ' : '', el('a', {href: s.url, target: '_blank', rel: 'noopener', text: s.label})])) : null)))) : '');
       };
       drawNotepad();
-      sec.append(notepadHost);
-      if (opts.chat) sec.append(opts.chat({g, c, d, redraw: drawNotepad}));
+      pC.append(notepadHost);
+      if (opts.chat) pC.append(opts.chat({g, c, d, redraw: drawNotepad}));
 
       /* 3. Dotation */
-      sec.append(el('h3', {text: '3. Adéquation de la dotation aux consommations annualisées'}));
+      pD.append(el('h3', {text: 'Adéquation de la dotation aux consommations annualisées'}));
       const dt = c.dotation(g.code);
       if (!dt) {
-        sec.append(el('div', {class: 'eff-card eff-pending'},
+        pD.append(el('div', {class: 'eff-card eff-pending'},
           el('p', {text: 'Ce volet compare, référence par référence, la dotation de ' + (g.ufs.length === 1 ? 'l’UF' : 'ce regroupement') + ' à 15 jours de consommation annualisée, arrondie au conditionnement : à augmenter, à réduire, sans consommation, hors dotation.'}),
           el('p', {class: 'eff-small', text: 'En attente de l’état de la dotation (colonnes Code, Rangement, Libellé, Dotation), à déposer dans « Mettre à jour les données du service ».'})));
       } else {
         const cnt = (s) => dt.rows.filter((r) => r.statut === s).length;
         const nbDot = dt.rows.filter((r) => r.dot != null).length;
-        sec.append(el('p', {class: 'eff-note', text: `Dotation de ${nbDot} références (${dt.fichier}). Cible : ${E.JOURS_DOTATION} jours de consommation annualisée, arrondie au conditionnement supérieur (lu dans le libellé : carton, boîte…), ou à l’unité quand le conditionnement dépasse le besoin de 15 jours. Écart toléré : un conditionnement ou 20 %.`}),
+        pD.append(el('p', {class: 'eff-note', text: `Dotation de ${nbDot} références (${dt.fichier}). Cible : ${E.JOURS_DOTATION} jours de consommation annualisée, arrondie au conditionnement supérieur (lu dans le libellé : carton, boîte…), ou à l’unité quand le conditionnement dépasse le besoin de 15 jours. Écart toléré : un conditionnement ou 20 %.`}),
           el('div', {class: 'eff-tiles eff-tiles-dot'},
             [['À augmenter', 'warn'], ['À réduire', 'info'], ['Sans consommation', 'bad'], ['Hors dotation', ''], ['Adaptée', 'ok']].map(([s, k]) => el('div', {class: 'eff-card eff-st-' + (k || 'none')}, el('div', {class: 'eff-tl', text: s}), el('div', {class: 'eff-tv', text: E.num(cnt(s))})))),
           el('p', {class: 'eff-small'}, 'Valeur de la dotation : ', el('b', {text: E.eur(dt.valActuelle)}), ' aujourd’hui → ', el('b', {text: E.eur(dt.valProposee)}), ' avec les ajustements proposés (références sans consommation retirées)' + (dt.sansPrix ? ` ; ${dt.sansPrix} références sans prix connu non valorisées.` : '.')));
         const nSur = dt.rows.filter((r) => E.alerteCouv(r) === 'sur').length, nSous = dt.rows.filter((r) => E.alerteCouv(r) === 'sous').length;
-        sec.append(el('div', {class: 'eff-couv'},
+        pD.append(el('div', {class: 'eff-couv'},
           el('div', {class: 'eff-couv-item eff-couv-sur'}, el('b', {text: E.num(nSur)}), ` références dont la dotation couvre plus d’un mois (> ${E.COUV_MAX} jours) de consommation moyenne`),
           el('div', {class: 'eff-couv-item eff-couv-sous'}, el('b', {text: E.num(nSous)}), ` références dont la dotation couvre moins de ${E.COUV_MIN} jours de consommation moyenne`)),
           el('p', {class: 'eff-small', text: 'Dans le tableau, ces références sont surlignées en bleu (plus d’un mois de stock) ou en rose (moins de 10 jours). Cliquez sur un bandeau pour les afficher seules.'}));
@@ -563,9 +577,9 @@
         };
         selS.addEventListener('change', () => { allD = false; showD(); });
         selFD.addEventListener('change', () => { allD = false; showD(); });
-        sec.querySelectorAll('.eff-couv-item').forEach((it) => { it.addEventListener('click', () => { selS.value = it.classList.contains('eff-couv-sur') ? 'sur' : 'sous'; allD = false; showD(); }); });
+        pD.querySelectorAll('.eff-couv-item').forEach((it) => { it.addEventListener('click', () => { selS.value = it.classList.contains('eff-couv-sur') ? 'sur' : 'sous'; allD = false; showD(); }); });
         const nDec = () => dt.rows.filter((r) => decidee(r) != null).length;
-        sec.append(el('div', {class: 'eff-ctl'}, selFD, selS), infoD, hostD, el('div', {class: 'eff-row'}, moreD, exportD),
+        pD.append(el('div', {class: 'eff-ctl'}, selFD, selS), infoD, hostD, el('div', {class: 'eff-row'}, moreD, exportD),
           el('p', {class: 'eff-small', text: 'Dotation décidée : préremplie avec la dotation actuelle quand elle est jugée adaptée (en italique) ; à saisir pour les autres références' + (opts.editable ? ', puis « Publier » en bas de page pour l’enregistrer.' : '.')}),
           el('p', {class: 'eff-small', text: 'À relire avec l’équipe avant toute modification : un produit d’urgence ou à rotation lente peut rester en dotation même sans consommation récente ; « Hors dotation » = référence consommée au moins une fois par quinzaine en moyenne mais absente de la dotation (à ajouter ou à laisser en délivrance nominative).'}));
         showD();
@@ -641,6 +655,18 @@
       requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
     }
     root.querySelectorAll('.eff-tab').forEach((b) => b.addEventListener('click', () => show(b.dataset.view)));
+    const voletOk = (v) => E.VOLETS.some((x) => x.id === v);
+    let volet = 'couts';
+    try { const v = sessionStorage.getItem('eff-volet'); if (voletOk(v)) volet = v; } catch (e) {}
+    const montrerVolet = (v) => {
+      volet = voletOk(v) ? v : 'couts';
+      try { sessionStorage.setItem('eff-volet', volet); } catch (e) {}
+      root.querySelectorAll('.eff-subtab').forEach((b) => { const on = b.dataset.pane === volet; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+      root.querySelectorAll('.eff-pane').forEach((p) => { p.hidden = p.dataset.pane !== volet; });
+      requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    };
+    root.querySelectorAll('.eff-subtab').forEach((b) => b.addEventListener('click', () => montrerVolet(b.dataset.pane)));
+    montrerVolet(volet);
     show(decodeURIComponent((location.hash || '').slice(1)));
 
     root.append(el('details', {class: 'eff-method'}, el('summary', {text: 'Méthode'}), el('ul', {},
