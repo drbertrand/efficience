@@ -186,3 +186,9 @@ td.eff-st-warn { color: #9a5b1e; } td.eff-st-info { color: #3a5683; } td.eff-st-
 .eff-gauge-f b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
 .eff-gauge-note { grid-column: 1 / -1; margin: 6px 0 0; font-size: .72rem; color: var(--muted); line-height: 1.35; }
 @media (max-width: 900px) { .eff-dot-wrap { grid-template-columns: 1fr; } .eff-gauge { position: static; order: -1; } }
+
+/* Bouton « Replier le tableau », qui reste visible en bas de l'écran tant que le tableau déplié est affiché */
+.eff-tblwrap { position: relative; min-width: 0; }
+.eff-fold { position: sticky; bottom: 14px; z-index: 5; display: block; margin: 10px 0 0 auto; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.eff-fold[hidden] { display: none; }
+@media print { .eff-fold { display: none !important; } }

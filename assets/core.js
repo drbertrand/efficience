@@ -589,13 +589,16 @@
         ].filter(Boolean), (all ? rows : rows.slice(0, N)).map((r) => ({...r, pGlob: tot ? Math.round(r.vr / tot * 1000) / 10 : null, _muted: r.fin !== 'Intra-GHS'}))) : el('p', {class: 'eff-small', text: 'Aucune référence pour ce choix.'}));
         more.hidden = rows.length <= N;
         more.textContent = all ? 'Afficher les 25 premières seulement' : `Afficher les ${rows.length} références`;
+        fold.hidden = !(all && rows.length > N);
       };
+      const fold = el('button', {class: 'eff-btn eff-fold', type: 'button', text: '▲ Replier le tableau', hidden: ''});
+      fold.addEventListener('click', () => { all = false; showRefs(); host.scrollIntoView({behavior: 'smooth', block: 'start'}); });
       selF.addEventListener('change', showRefs); chk.addEventListener('change', showRefs);
       more.addEventListener('click', () => { all = !all; showRefs(); });
       pC.append(el('h3', {text: '2. Références par coût global décroissant'}),
         el('p', {class: 'eff-note', text: 'Les deux pourcentages se recalculent selon le filtre : % du total = part de la référence dans le total du tableau affiché (indiqué au-dessus du tableau) ; % cumulé = part atteinte de la première référence jusqu’à la ligne.'}),
         el('div', {class: 'eff-ctl'}, selF, el('label', {class: 'eff-check'}, chk, 'Inclure les références remboursées en sus du séjour (hors GHS, LPPR)')),
-        info, host, el('div', {class: 'eff-row'}, more));
+        info, el('div', {class: 'eff-tblwrap'}, host, fold), el('div', {class: 'eff-row'}, more));
       showRefs();
       const notepadHost = el('div');
       const drawNotepad = () => {
@@ -678,6 +681,8 @@
         const hostD = el('div'), infoD = el('p', {class: 'eff-small'}), moreD = el('button', {class: 'eff-btn ghost', type: 'button'});
         let allD = false;
         moreD.addEventListener('click', () => { allD = !allD; showD(); });
+        const foldD = el('button', {class: 'eff-btn eff-fold', type: 'button', text: '▲ Replier le tableau', hidden: ''});
+        foldD.addEventListener('click', () => { allD = false; showD(); hostD.scrollIntoView({behavior: 'smooth', block: 'start'}); });
         const ordre = (s) => E.STATUTS.indexOf(s);
         const showD = () => {
           const v = selS.value;
@@ -711,6 +716,7 @@
             }}
           ], (allD ? rows : rows.slice(0, 25)).map((r) => ({...r, _muted: r.statut === 'Adaptée'}))) : el('p', {class: 'eff-small', text: 'Aucune référence pour ce choix.'}));
           moreD.hidden = rows.length <= 25; moreD.textContent = allD ? 'Afficher les 25 premières seulement' : `Afficher les ${rows.length} références`;
+          foldD.hidden = !(allD && rows.length > 25);
           hostD.querySelectorAll('tbody tr').forEach((tr, i) => { const al = E.alerteCouv(rows[i]); if (al) tr.classList.add('eff-row-' + al); const td = tr.querySelector('td[data-k=statut]'); if (td) td.className = 'eff-st eff-st-' + ({'À augmenter': 'warn', 'À réduire': 'info', 'Sans consommation': 'bad', 'Hors dotation': 'none', 'Adaptée': 'ok'})[rows[i].statut]; });
         };
         selS.addEventListener('change', () => { allD = false; showD(); });
@@ -718,7 +724,7 @@
         pD.querySelectorAll('.eff-couv-item').forEach((it) => { it.addEventListener('click', () => { selS.value = it.classList.contains('eff-couv-sur') ? 'sur' : 'sous'; allD = false; showD(); }); });
         const nDec = () => dt.rows.filter((r) => decidee(r) != null).length;
         majJauge();
-        pD.append(el('div', {class: 'eff-ctl'}, selFD, selS), infoD, el('div', {class: 'eff-dot-wrap'}, hostD, jauge), el('div', {class: 'eff-row'}, moreD, exportD),
+        pD.append(el('div', {class: 'eff-ctl'}, selFD, selS), infoD, el('div', {class: 'eff-dot-wrap'}, el('div', {class: 'eff-tblwrap'}, hostD, foldD), jauge), el('div', {class: 'eff-row'}, moreD, exportD),
           el('p', {class: 'eff-small', text: 'Unités / boîte : valeur du référentiel administratif ; en italique, lue dans le libellé faute de référentiel. Indicative : la dotation proposée n’est pas arrondie à la boîte, à vous de le faire dans « Dotation décidée » si c’est pertinent.'}),
           el('p', {class: 'eff-small', text: 'Dotation décidée : préremplie avec la dotation actuelle quand elle est jugée adaptée (en italique) ; à saisir pour les autres références' + (opts.editable ? ', puis « Publier » en bas de page pour l’enregistrer.' : '.')}),
           el('p', {class: 'eff-small', text: 'À relire avec l’équipe avant toute modification : un produit d’urgence ou à rotation lente peut rester en dotation même sans consommation récente ; « Hors dotation » = référence dont le besoin sur le seuil minimal atteint au moins une unité mais absente de la dotation (à ajouter ou à laisser en délivrance nominative).'}));
