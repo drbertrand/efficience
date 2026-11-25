@@ -7,7 +7,7 @@
 <title>Référentiels administratifs — Pharmacie clinique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611251600">
+<link rel="stylesheet" href="assets/style.css?v=202611251700">
 <style>
   .ref-form { display: grid; gap: 14px; }
   .ref-val { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
@@ -21,6 +21,9 @@
   .ref-bar { position: sticky; bottom: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
   .ref-bar[hidden] { display: none; }
   .ref-preview { font-size: .85rem; color: var(--muted); }
+  .ref-scroll { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; }
+  .ref-scroll table { margin: 0; border: 0; }
+  .ref-scroll thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; box-shadow: 0 1px 0 var(--line); }
 </style>
 </head>
 <body>
@@ -38,19 +41,32 @@
     <header class="eff-head">
       <p class="eff-kicker">Pharmacie clinique · CHG</p>
       <h1>Listes de produits remboursés en sus <span class="eff-annee" id="annee"></span></h1>
-      <p class="eff-sub">Chaque liste recense des produits remboursés en plus du tarif du séjour (médicaments hors GHS, dispositifs LPPR, accès précoce…). Ils sont exclus du coût à la charge de l’hôpital sur toutes les pages de service, pendant la période de validité indiquée.</p>
+      <p class="eff-sub">Chaque liste recense des produits remboursés en plus du tarif du séjour (médicaments hors GHS, dispositifs LPPR, accès précoce…). Ils sont exclus du coût à la charge de l’hôpital sur toutes les pages de service, pendant la période de validité indiquée. Le nombre d’unités par boîte sert à arrondir les dotations proposées.</p>
     </header>
 
     <div class="eff-steps">
       <section class="eff-step">
-        <h2>Listes en vigueur</h2>
+        <h2>Listes de produits remboursés en sus</h2>
         <div id="listes"></div>
       </section>
 
       <section class="eff-step">
-        <h2>Ajouter une liste</h2>
+        <h2>Ajouter une liste de produits en sus</h2>
         <p class="eff-note">Fichier Excel ou CSV à deux colonnes : code produit, libellé (les lignes sans code numérique, comme les titres, sont ignorées). Plusieurs fichiers peuvent être ajoutés en une fois avec les mêmes réglages.</p>
         <div class="ref-form" id="add-form"></div>
+      </section>
+
+      <section class="eff-step">
+        <h2>Unités par boîte</h2>
+        <p class="eff-note">Listings des médicaments et des DMS indiquant le nombre d’unités par boîte, utilisé sur toutes les pages de service pour arrondir les dotations proposées. Colonnes attendues : code produit, libellé, nombre d’unités par boîte (repérées par leur titre). Plusieurs fichiers possibles : pour un même produit, seule la dernière valeur chargée est conservée.</p>
+        <label class="eff-field">Fichier(s)<input type="file" id="cond-file" accept=".xlsx,.xls,.csv" multiple></label>
+        <div id="cond-msg" class="eff-small" role="status"></div>
+        <div id="cond-files" class="eff-small"></div>
+        <div class="eff-row" style="align-items:flex-end">
+          <label class="eff-field">Filtrer<input class="eff-input" id="cond-q" placeholder="code ou libellé" style="max-width:280px"></label>
+          <span class="eff-small" id="cond-count"></span>
+        </div>
+        <div class="ref-scroll" id="cond-table"></div>
       </section>
 
       <section class="eff-step">
@@ -70,18 +86,19 @@
     <footer class="eff-foot"><a href="./">Accueil</a></footer>
   </div>
 </main>
-<script src="assets/xlsx.full.min.js?v=202611251600"></script>
-<script src="assets/core.js?v=202611251600"></script>
+<script src="assets/xlsx.full.min.js?v=202611251700"></script>
+<script src="assets/core.js?v=202611251700"></script>
 <script>
 (async function () {
   'use strict';
   const $ = (id) => document.getElementById(id), el = EFF.el;
-  let ACCES = null, LISTES = [], PUBLIE = '[]', ANNEE = new Date().getFullYear();
+  let ACCES = null, LISTES = [], COND = {}, FCOND = [], PUBLIE = '', ANNEE = new Date().getFullYear();
+  const etat = () => JSON.stringify({LISTES, COND, FCOND});
   try { const m = await (await fetch('data/manifest.json?t=' + Date.now(), {cache: 'no-store'})).json(); const ex = (m.services || []).map((s) => +s.exercice).filter(Boolean); if (ex.length) ANNEE = Math.max(...ex); } catch (e) {}
 
   const TYPES = [['Hors GHS', 'Médicaments hors GHS (liste en sus)'], ['LPPR', 'Dispositifs médicaux LPPR (en sus)'], ['Accès précoce', 'Accès précoce / accès compassionnel'], ['Autre', 'Autre (à préciser)']];
-  const dirty = () => JSON.stringify(LISTES) !== PUBLIE;
-  const refresh = () => { $('bar').hidden = !dirty(); renderListes(); search(); };
+  const dirty = () => etat() !== PUBLIE;
+  const refresh = () => { $('bar').hidden = !dirty(); renderListes(); renderCond(); search(); };
   const nbCodes = (l) => (l.codes || []).length;
 
   $('lock').addEventListener('submit', async (ev) => {
@@ -94,7 +111,7 @@
       try { raw = await EFF.github(ACCES.github).raw('data/referentiels.enc.json'); } catch (e) {}
       if (!raw) { const f = await fetch('data/referentiels.enc.json?t=' + Date.now(), {cache: 'no-store'}); if (f.ok) raw = await f.text(); }
       const data = raw ? await EFF.decrypt(JSON.parse(raw), ACCES.cleRef) : {listes: []};
-      LISTES = data.listes || []; PUBLIE = JSON.stringify(LISTES);
+      LISTES = data.listes || []; COND = data.conditionnements || {}; FCOND = data.fichiersCond || []; PUBLIE = etat();
       $('lock').hidden = true; $('app').hidden = false; $('annee').textContent = 'Année d’analyse ' + ANNEE;
       renderAdd(); refresh();
     } catch (e) {
@@ -205,23 +222,57 @@
       el('p', {class: 'eff-small', text: 'Les extractions de consommation ne sont pas datées : pour une liste valable seulement une partie de l’année, la part remboursée d’un produit est estimée au prorata de la durée couverte sur la période analysée.'}));
   }
 
+  /* Unités par boîte */
+  $('cond-file').addEventListener('change', async (ev) => {
+    const files = [...ev.target.files]; if (!files.length) return;
+    const out = [];
+    for (const f of files) {
+      let r; try { r = EFF.parseCond(await EFF.readWorkbook(f)); } catch (e) { r = {lignes: []}; }
+      if (!r.lignes.length) { out.push(el('div', {class: 'eff-err', text: `${f.name} : aucune valeur lue (colonnes code et nombre d’unités par boîte attendues).`})); continue; }
+      const date = new Date().toISOString();
+      let maj = 0, nouv = 0;
+      r.lignes.forEach((x) => { const old = COND[x.code]; if (old) { if (old.u !== x.u) maj++; } else nouv++; COND[x.code] = {u: x.u, libelle: x.libelle || (old && old.libelle) || '', fichier: f.name, date}; });
+      FCOND.push({fichier: f.name, date, n: r.lignes.length, colonne: r.colonne || null});
+      out.push(el('div', {class: 'eff-ok', text: `${f.name} : ${r.lignes.length} produits lus${r.colonne ? ` (colonne « ${r.colonne} »)` : ''} — ${nouv} nouveaux, ${maj} valeurs modifiées. Ex. : ${r.lignes.slice(0, 3).map((x) => `${x.code} ${x.libelle} → ${x.u}`).join(' ; ')}`}));
+    }
+    $('cond-msg').replaceChildren(...out); ev.target.value = ''; refresh();
+  });
+  function renderCond() {
+    const all = Object.entries(COND).map(([code, v]) => ({code: +code, ...v}));
+    $('cond-files').replaceChildren(FCOND.length ? el('p', {}, 'Fichiers chargés : ', FCOND.map((f, i) => [i ? ' · ' : '', `${f.fichier} (${EFF.num(f.n)} produits, ${new Date(f.date).toLocaleDateString('fr-FR')})`]),
+      ' ', el('button', {class: 'eff-btn ghost', type: 'button', text: 'Tout effacer', style: 'padding:2px 8px;font-size:.8rem', onclick: () => { if (confirm('Effacer toutes les valeurs d’unités par boîte ? Les dotations seront de nouveau arrondies d’après le libellé, après publication.')) { COND = {}; FCOND = []; refresh(); } }})) : '');
+    const q = $('cond-q').value.trim().toUpperCase();
+    const rows = all.filter((r) => !q || String(r.code).startsWith(q) || (r.libelle || '').toUpperCase().includes(q)).sort((a, b) => (a.libelle || '').localeCompare(b.libelle || '', 'fr') || a.code - b.code);
+    $('cond-count').textContent = all.length ? (q ? `${EFF.num(rows.length)} sur ${EFF.num(all.length)} produits` : `${EFF.num(all.length)} produits`) : '';
+    $('cond-table').hidden = !all.length;
+    if (!all.length) { $('cond-table').replaceChildren(); return; }
+    const shown = rows.slice(0, 1500);
+    $('cond-table').replaceChildren(el('table', {class: 'eff-table'},
+      el('thead', {}, el('tr', {}, ['Code', 'Libellé', 'Unités / boîte', 'Fichier', 'Chargé le'].map((h, i) => el('th', {class: i === 2 ? 'n' : null, text: h})))),
+      el('tbody', {}, shown.map((r) => el('tr', {}, el('td', {text: r.code}), el('td', {text: r.libelle || '—'}), el('td', {class: 'n', text: EFF.num(r.u)}), el('td', {class: 'eff-small', text: r.fichier}), el('td', {class: 'eff-small', text: new Date(r.date).toLocaleDateString('fr-FR')}))))),
+      rows.length > shown.length ? el('p', {class: 'eff-small', style: 'padding:6px 10px', text: `${EFF.num(rows.length - shown.length)} produits de plus : affinez le filtre.`}) : '');
+  }
+  $('cond-q').addEventListener('input', renderCond);
+
   /* Recherche */
   function search() {
     const q = $('q').value.trim().toUpperCase();
     if (q.length < 3) { $('q-res').replaceChildren(); return; }
     const hits = [];
     LISTES.forEach((l) => (l.codes || []).forEach((c) => { if (String(c.code) === q || String(c.libelle || '').toUpperCase().includes(q)) hits.push({l, c}); }));
-    $('q-res').replaceChildren(hits.length ? el('ul', {}, hits.slice(0, 40).map(({l, c}) => el('li', {}, el('b', {text: `${c.code} ${c.libelle}`}), ` — ${l.nom} (${l.type}, ${EFF.validiteTexte(l)})${l.active === false ? ', désactivée' : ''}`))) : el('p', {text: 'Ce produit ne figure sur aucune liste : il est compté à la charge de l’hôpital (intra-GHS).'}));
+    const cs = Object.entries(COND).filter(([k, v]) => k === q || (v.libelle || '').toUpperCase().includes(q)).slice(0, 10);
+    const cNode = cs.length ? el('p', {}, 'Unités par boîte : ', cs.map(([k, v], i) => [i ? ' ; ' : '', el('b', {text: `${k} ${v.libelle}`}), ` → ${EFF.num(v.u)} (${v.fichier})`])) : null;
+    $('q-res').replaceChildren(cNode || '', hits.length ? el('ul', {}, hits.slice(0, 40).map(({l, c}) => el('li', {}, el('b', {text: `${c.code} ${c.libelle}`}), ` — ${l.nom} (${l.type}, ${EFF.validiteTexte(l)})${l.active === false ? ', désactivée' : ''}`))) : el('p', {text: 'Ce produit ne figure sur aucune liste de produits en sus : il est compté à la charge de l’hôpital (intra-GHS).'}));
   }
   $('q').addEventListener('input', search);
 
   /* Publication */
-  $('cancel').addEventListener('click', () => { if (confirm('Annuler toutes les modifications non publiées ?')) { LISTES = JSON.parse(PUBLIE); enEdition = null; refresh(); } });
+  $('cancel').addEventListener('click', () => { if (confirm('Annuler toutes les modifications non publiées ?')) { const e = JSON.parse(PUBLIE); LISTES = e.LISTES; COND = e.COND; FCOND = e.FCOND; enEdition = null; refresh(); } });
   $('publish').addEventListener('click', async () => {
     $('pub-log').className = 'eff-small'; $('pub-log').textContent = 'Publication…'; $('publish').disabled = true;
     try {
-      await EFF.github(ACCES.github).put('data/referentiels.enc.json', JSON.stringify(await EFF.encrypt({listes: LISTES, maj: new Date().toISOString()}, ACCES.cleRef)), 'Efficience : listes de produits en sus');
-      PUBLIE = JSON.stringify(LISTES); $('pub-log').textContent = ''; refresh();
+      await EFF.github(ACCES.github).put('data/referentiels.enc.json', JSON.stringify(await EFF.encrypt({listes: LISTES, conditionnements: COND, fichiersCond: FCOND, maj: new Date().toISOString()}, ACCES.cleRef)), 'Efficience : listes de produits en sus');
+      PUBLIE = etat(); $('pub-log').textContent = ''; refresh();
       $('pub-ok').textContent = 'Publié. Toutes les pages de service en tiennent compte d’ici une à deux minutes.';
     } catch (e) { $('pub-log').className = 'eff-err'; $('pub-log').textContent = 'Échec de la publication : ' + EFF.ghError(e); }
     finally { $('publish').disabled = false; }

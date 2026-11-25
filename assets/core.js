@@ -36,6 +36,30 @@
     return [...m.entries()].map(([code, libelle]) => ({code, libelle}));
   };
 
+  /* Listing « unités par boîte » : colonnes repérées par leur titre (code ; libellé ; unités par boîte / conditionnement…),
+     à défaut 1re colonne = code, 2e = libellé, dernière colonne numérique = nombre d'unités. */
+  E.parseCond = (wb) => {
+    const rows = rowsOf(wb);
+    const KW = /unit|condition|boit|colis|ucd|nombre|nb|qte|quantit|pcb|par\s*bo/;
+    let hi = -1, cCode = 0, cLib = 1, cVal = -1, entete = null;
+    for (let i = 0; i < Math.min(rows.length, 15); i++) {
+      const h = rows[i].map(norm);
+      const k = h.findIndex((c) => /code/.test(c)), v = h.findIndex((c, j) => j !== k && KW.test(c) && !/code/.test(c));
+      if (k >= 0 && v >= 0) { hi = i; cCode = k; cVal = v; entete = rows[i][v]; const l = h.findIndex((c, j) => j !== k && j !== v && /lib|design|nom|produit|article/.test(c)); cLib = l >= 0 ? l : -1; break; }
+    }
+    const m = new Map();
+    for (const r of rows.slice(hi + 1)) {
+      const code = parseInt(String(r[cCode] == null ? '' : r[cCode]).trim(), 10);
+      if (!Number.isFinite(code)) continue;
+      let v = cVal;
+      if (v < 0) { for (let j = r.length - 1; j > cCode; j--) { if (j !== cLib && Number.isFinite(parseFloat(String(r[j]).replace(',', '.')))) { v = j; break; } } }
+      const u = v >= 0 ? parseFloat(String(r[v]).replace(',', '.')) : NaN;
+      if (!(u > 0)) continue;
+      m.set(code, {code, libelle: cLib >= 0 ? String(r[cLib] == null ? '' : r[cLib]).trim() : '', u: Math.round(u * 1000) / 1000});
+    }
+    return {lignes: [...m.values()], colonne: entete};
+  };
+
   /* Extraction « Analyse_conso » : repère les colonnes par leur nom. */
   E.parseConso = (wb) => {
     const rows = rowsOf(wb);
@@ -170,6 +194,12 @@
     const m = s.match(/(?:CARTON|BOITE|BOÎTE|BTE|BT|SACHET|PAQUET|CAISSE)\s*(?:DE\s*|\/\s*)(\d{1,4})/) || s.match(/(\d{1,4})\s*\/\s*SACH/);
     const n = m ? parseInt(m[1], 10) : 1;
     return n > 0 ? n : 1;
+  };
+  /* Unités par boîte du référentiel administratif (dernière valeur déposée par les agents), par code produit. */
+  E.condRef = (d) => {
+    const m = new Map(), src = (d._ref && d._ref.conditionnements) || {};
+    for (const [k, v] of Object.entries(src)) { const u = +(v && typeof v === 'object' ? v.u : v); if (u > 0) m.set(+k, u); }
+    return m;
   };
   E.JOURS_DOTATION = 15;
   E.COUV_MAX = 30; E.COUV_MIN = 10;
@@ -364,9 +394,11 @@
       const g = regs.find((x) => x.code === code);
       const conso = new Map();
       for (const l of L) if (g.ufs.some((u) => u.uf === l.uf)) { const p = conso.get(l.code) || {q: 0, libelle: l.libelle, famille: l.famille}; p.q += l.q; conso.set(l.code, p); }
-      const J = E.JOURS_DOTATION, rows = [];
+      const J = E.JOURS_DOTATION, rows = [], condRef = E.condRef(d);
       const mk = (code, libelle, rangement, dot, famille) => {
-        const c = conso.get(code), qAn = c ? Math.max(0, c.q * F) : 0, besoin = qAn * J / 365, condLu = E.conditionnement(libelle), cond = condLu <= Math.max(besoin, 1) ? condLu : 1;
+        const c = conso.get(code), qAn = c ? Math.max(0, c.q * F) : 0, besoin = qAn * J / 365, condLu = E.conditionnement(libelle);
+        const boite = condRef.get(code) || (condLu > 1 ? condLu : null), boiteSrc = condRef.has(code) ? 'referentiel' : (condLu > 1 ? 'libelle' : null);
+        const cond = (boite || 1) <= Math.max(besoin, 1) ? (boite || 1) : 1;
         const cible = besoin > 0 ? Math.ceil(besoin / cond) * cond : 0;
         let statut;
         if (dot == null) statut = 'Hors dotation';
@@ -374,7 +406,7 @@
         else if (Math.abs(dot - cible) <= Math.max(cond, 0.2 * cible)) statut = 'Adaptée';
         else statut = dot < cible ? 'À augmenter' : 'À réduire';
         const p = pu.get(code);
-        return {code, libelle, rangement: rangement || '', famille: famille || (c && c.famille) || E.familleDotation({code, rangement, libelle}), dot, qAn: Math.round(qAn), besoin: Math.round(besoin * 10) / 10, cond, cible,
+        return {code, libelle, rangement: rangement || '', famille: famille || (c && c.famille) || E.familleDotation({code, rangement, libelle}), dot, qAn: Math.round(qAn), besoin: Math.round(besoin * 10) / 10, cond, boite, boiteSrc, cible,
           ecart: dot == null ? cible : cible - dot, statut, couv: dot != null && qAn > 0 ? Math.round(dot / (qAn / 365) * 10) / 10 : null, pu: p == null ? null : p, valDot: p != null && dot != null ? dot * p : null, valCible: p != null ? cible * p : null};
       };
       const inDot = new Set();
@@ -583,7 +615,7 @@
       } else {
         const cnt = (s) => dt.rows.filter((r) => r.statut === s).length;
         const nbDot = dt.rows.filter((r) => r.dot != null).length;
-        pD.append(el('p', {class: 'eff-note', text: `Dotation de ${nbDot} références (${dt.fichier}). Cible : ${E.JOURS_DOTATION} jours de consommation annualisée, arrondie au conditionnement supérieur (lu dans le libellé : carton, boîte…), ou à l’unité quand le conditionnement dépasse le besoin de 15 jours. Écart toléré : un conditionnement ou 20 %.`}),
+        pD.append(el('p', {class: 'eff-note', text: `Dotation de ${nbDot} références (${dt.fichier}). Cible : ${E.JOURS_DOTATION} jours de consommation annualisée, arrondie au nombre d’unités par boîte (référentiel administratif ; à défaut lu dans le libellé : carton, boîte…), ou à l’unité quand la boîte dépasse le besoin de 15 jours. Écart toléré : une boîte ou 20 %.`}),
           el('div', {class: 'eff-tiles eff-tiles-dot'},
             [['À augmenter', 'warn'], ['À réduire', 'info'], ['Sans consommation', 'bad'], ['Hors dotation', ''], ['Adaptée', 'ok']].map(([s, k]) => el('div', {class: 'eff-card eff-st-' + (k || 'none')}, el('div', {class: 'eff-tl', text: s}), el('div', {class: 'eff-tv', text: E.num(cnt(s))})))),
           el('p', {class: 'eff-small'}, 'Valeur de la dotation : ', el('b', {text: E.eur(dt.valActuelle)}), ' aujourd’hui → ', el('b', {text: E.eur(dt.valProposee)}), ' avec les ajustements proposés (références sans consommation retirées)' + (dt.sansPrix ? ` ; ${dt.sansPrix} références sans prix connu non valorisées.` : '.')));
@@ -601,8 +633,8 @@
         const exportD = el('button', {class: 'eff-btn ghost', type: 'button', text: 'Exporter la dotation décidée (CSV)'});
         exportD.addEventListener('click', () => {
           const q = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
-          const lines = [['Code', 'Référence', 'Type', 'Rangement', 'Dotation actuelle', 'Consommation annuelle', 'Dotation proposée', 'Statut', 'Dotation décidée'].map(q).join(';')]
-            .concat(dt.rows.map((r) => [r.code, r.libelle, r.famille, r.rangement, r.dot == null ? '' : r.dot, r.qAn, r.cible, r.statut, decidee(r) == null ? '' : decidee(r)].map(q).join(';')));
+          const lines = [['Code', 'Référence', 'Type', 'Rangement', 'Dotation actuelle', 'Consommation annuelle', 'Unités par boîte', 'Dotation proposée', 'Statut', 'Dotation décidée'].map(q).join(';')]
+            .concat(dt.rows.map((r) => [r.code, r.libelle, r.famille, r.rangement, r.dot == null ? '' : r.dot, r.qAn, r.boite == null ? '' : r.boite, r.cible, r.statut, decidee(r) == null ? '' : decidee(r)].map(q).join(';')));
           const a = el('a', {href: URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], {type: 'text/csv;charset=utf-8'})), download: `dotation-${g.code}-${new Date().toISOString().slice(0, 10)}.csv`});
           document.body.append(a); a.click(); a.remove();
         });
@@ -620,7 +652,10 @@
           hostD.replaceChildren(rows.length ? table([
             {key: 'libelle', label: 'Référence'}, {key: 'rangement', label: 'Rangement'},
             {key: 'dot', label: 'Dotation actuelle', n: 1, fmt: (v) => (v == null ? '—' : E.num(v))}, {key: 'qAn', label: 'Conso / an', n: 1, fmt: E.num},
-            {key: 'cond', label: 'Cond.', n: 1}, {key: 'cible', label: 'Dotation proposée', n: 1, fmt: E.num},
+            {key: 'boite', label: 'Unités / boîte', n: 1, render: (r) => (r.boite == null ? el('span', {class: 'eff-muted', text: '—', title: 'Nombre d’unités par boîte inconnu'}) :
+              el('span', {class: r.boiteSrc === 'libelle' ? 'eff-pre' : null, title: (r.boiteSrc === 'libelle' ? 'Lu dans le libellé (absent du référentiel administratif)' : 'Référentiel administratif') + (r.cond === 1 && r.boite > 1 ? ' · proposition arrondie à l’unité : la boîte dépasse le besoin de 15 jours' : ''),
+                text: E.num(r.boite) + (r.cond === 1 && r.boite > 1 ? ' *' : '')}))},
+            {key: 'cible', label: 'Dotation proposée', n: 1, fmt: E.num},
             {key: 'statut', label: 'Statut', fmt: (v) => v},
             {key: 'decidee', label: 'Dotation décidée', n: 1, render: (r) => {
               const val = decidee(r), pre = dec[r.code] == null && val != null;
@@ -644,6 +679,7 @@
         pD.querySelectorAll('.eff-couv-item').forEach((it) => { it.addEventListener('click', () => { selS.value = it.classList.contains('eff-couv-sur') ? 'sur' : 'sous'; allD = false; showD(); }); });
         const nDec = () => dt.rows.filter((r) => decidee(r) != null).length;
         pD.append(el('div', {class: 'eff-ctl'}, selFD, selS), infoD, hostD, el('div', {class: 'eff-row'}, moreD, exportD),
+          el('p', {class: 'eff-small', text: 'Unités / boîte : valeur du référentiel administratif ; en italique, lue dans le libellé faute de référentiel ; « * » = proposition arrondie à l’unité, la boîte dépassant le besoin de 15 jours.'}),
           el('p', {class: 'eff-small', text: 'Dotation décidée : préremplie avec la dotation actuelle quand elle est jugée adaptée (en italique) ; à saisir pour les autres références' + (opts.editable ? ', puis « Publier » en bas de page pour l’enregistrer.' : '.')}),
           el('p', {class: 'eff-small', text: 'À relire avec l’équipe avant toute modification : un produit d’urgence ou à rotation lente peut rester en dotation même sans consommation récente ; « Hors dotation » = référence consommée au moins une fois par quinzaine en moyenne mais absente de la dotation (à ajouter ou à laisser en délivrance nominative).'}));
         showD();

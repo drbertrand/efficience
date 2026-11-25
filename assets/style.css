@@ -165,3 +165,4 @@ td.eff-st-warn { color: #9a5b1e; } td.eff-st-info { color: #3a5683; } td.eff-st-
 .eff-annee { display: inline-block; vertical-align: middle; font-family: var(--body); font-size: .9rem; font-weight: 600; color: var(--accent); background: var(--accent-soft, #e6f2ec); border: 1px solid var(--accent); border-radius: 999px; padding: 3px 12px; margin-left: 6px; letter-spacing: 0; }
 .eff-fs { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 14px; margin: 10px 0; }
 .eff-fs legend { font-weight: 600; padding: 0 6px; }
+.eff-muted { color: var(--muted); }
