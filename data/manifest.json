@@ -1,17 +1,17 @@
 {
   "titre": "Le pharmacien clinicien au service de l’efficience",
-  "maj": "2026-11-25T14:06:12.268Z",
+  "maj": "2026-11-25T14:37:13.732Z",
   "services": [
-    {
-      "id": "gynecologie-obstetrique",
-      "nom": "Gynécologie-obstétrique",
-      "maj": "2026-11-25T14:06:02.583Z",
-      "exercice": 2026
-    },
     {
       "id": "reanimation",
       "nom": "Réanimation",
       "maj": "2026-11-25T14:06:12.268Z",
+      "exercice": 2026
+    },
+    {
+      "id": "gynecologie-obstetrique",
+      "nom": "Gynécologie-obstétrique",
+      "maj": "2026-11-25T14:37:13.732Z",
       "exercice": 2026
     }
   ]
