@@ -168,3 +168,21 @@ td.eff-st-warn { color: #9a5b1e; } td.eff-st-info { color: #3a5683; } td.eff-st-
 .eff-muted { color: var(--muted); }
 .eff-mode { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: flex-end; background: var(--accent-soft); border-radius: 10px; padding: 10px 14px; margin: 6px 0 14px; }
 .eff-mode .eff-small { margin: 0 0 6px; flex: 1 1 280px; }
+
+/* Jauge des références en dotation */
+.eff-dot-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 14px; align-items: start; }
+.eff-gauge { position: sticky; top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: 34px 1fr; column-gap: 12px; row-gap: 4px; font-size: .85rem; }
+.eff-gauge-t { grid-column: 1 / -1; color: var(--muted); font-size: .8rem; }
+.eff-gauge-n { grid-column: 1 / -1; font-family: var(--display); font-size: 2rem; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.eff-gauge-bar { grid-row: span 2; position: relative; height: 150px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.eff-gauge-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); transition: height .25s ease; }
+.eff-gauge-ref { position: absolute; left: -2px; right: -2px; height: 0; border-top: 2px dashed var(--ink); }
+.eff-gauge-d { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-self: end; }
+.eff-gauge-d dt { color: var(--muted); } .eff-gauge-d dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.eff-gauge-tot { font-weight: 600; color: var(--ink) !important; border-top: 1px solid var(--line); padding-top: 3px; }
+.eff-gauge-plus { color: var(--accent); font-weight: 600; } .eff-gauge-moins { color: var(--bad); font-weight: 600; }
+.eff-gauge-f { grid-column: 1 / -1; list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); }
+.eff-gauge-f li { display: flex; justify-content: space-between; color: var(--muted); }
+.eff-gauge-f b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.eff-gauge-note { grid-column: 1 / -1; margin: 6px 0 0; font-size: .72rem; color: var(--muted); line-height: 1.35; }
+@media (max-width: 900px) { .eff-dot-wrap { grid-template-columns: 1fr; } .eff-gauge { position: static; order: -1; } }

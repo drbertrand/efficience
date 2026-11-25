@@ -7,7 +7,7 @@
 <title>Référentiels administratifs — Pharmacie clinique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611251730">
+<link rel="stylesheet" href="assets/style.css?v=202611251815">
 <style>
   .ref-form { display: grid; gap: 14px; }
   .ref-val { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
@@ -41,7 +41,7 @@
     <header class="eff-head">
       <p class="eff-kicker">Pharmacie clinique · CHG</p>
       <h1>Listes de produits remboursés en sus <span class="eff-annee" id="annee"></span></h1>
-      <p class="eff-sub">Chaque liste recense des produits remboursés en plus du tarif du séjour (médicaments hors GHS, dispositifs LPPR, accès précoce…). Ils sont exclus du coût à la charge de l’hôpital sur toutes les pages de service, pendant la période de validité indiquée. Le nombre d’unités par boîte sert à arrondir les dotations proposées.</p>
+      <p class="eff-sub">Chaque liste recense des produits remboursés en plus du tarif du séjour (médicaments hors GHS, dispositifs LPPR, accès précoce…). Ils sont exclus du coût à la charge de l’hôpital sur toutes les pages de service, pendant la période de validité indiquée. Le nombre d’unités par boîte s’affiche en regard des dotations, pour que le pharmacien arrondisse s’il le juge pertinent.</p>
     </header>
 
     <div class="eff-steps">
@@ -58,7 +58,7 @@
 
       <section class="eff-step">
         <h2>Unités par boîte</h2>
-        <p class="eff-note">Listings des médicaments et des DMS indiquant le nombre d’unités par boîte, utilisé sur toutes les pages de service pour arrondir les dotations proposées. Colonnes attendues : code produit, libellé, nombre d’unités par boîte (repérées par leur titre). Plusieurs fichiers possibles : pour un même produit, seule la dernière valeur chargée est conservée.</p>
+        <p class="eff-note">Listings des médicaments et des DMS indiquant le nombre d’unités par boîte, affiché dans l’analyse des dotations de toutes les pages de service, pour aider le pharmacien à arrondir. Colonnes attendues : code produit, libellé, nombre d’unités par boîte (repérées par leur titre). Plusieurs fichiers possibles : pour un même produit, seule la dernière valeur chargée est conservée.</p>
         <label class="eff-field">Fichier(s)<input type="file" id="cond-file" accept=".xlsx,.xls,.csv" multiple></label>
         <div id="cond-msg" class="eff-small" role="status"></div>
         <div id="cond-files" class="eff-small"></div>
@@ -86,8 +86,8 @@
     <footer class="eff-foot"><a href="./">Accueil</a></footer>
   </div>
 </main>
-<script src="assets/xlsx.full.min.js?v=202611251730"></script>
-<script src="assets/core.js?v=202611251730"></script>
+<script src="assets/xlsx.full.min.js?v=202611251815"></script>
+<script src="assets/core.js?v=202611251815"></script>
 <script>
 (async function () {
   'use strict';
@@ -240,7 +240,7 @@
   function renderCond() {
     const all = Object.entries(COND).map(([code, v]) => ({code: +code, ...v}));
     $('cond-files').replaceChildren(FCOND.length ? el('p', {}, 'Fichiers chargés : ', FCOND.map((f, i) => [i ? ' · ' : '', `${f.fichier} (${EFF.num(f.n)} produits, ${new Date(f.date).toLocaleDateString('fr-FR')})`]),
-      ' ', el('button', {class: 'eff-btn ghost', type: 'button', text: 'Tout effacer', style: 'padding:2px 8px;font-size:.8rem', onclick: () => { if (confirm('Effacer toutes les valeurs d’unités par boîte ? Les dotations seront de nouveau arrondies d’après le libellé, après publication.')) { COND = {}; FCOND = []; refresh(); } }})) : '');
+      ' ', el('button', {class: 'eff-btn ghost', type: 'button', text: 'Tout effacer', style: 'padding:2px 8px;font-size:.8rem', onclick: () => { if (confirm('Effacer toutes les valeurs d’unités par boîte ? Après publication, seule la valeur lue dans le libellé restera affichée.')) { COND = {}; FCOND = []; refresh(); } }})) : '');
     const q = $('cond-q').value.trim().toUpperCase();
     const rows = all.filter((r) => !q || String(r.code).startsWith(q) || (r.libelle || '').toUpperCase().includes(q)).sort((a, b) => (a.libelle || '').localeCompare(b.libelle || '', 'fr') || a.code - b.code);
     $('cond-count').textContent = all.length ? (q ? `${EFF.num(rows.length)} sur ${EFF.num(all.length)} produits` : `${EFF.num(all.length)} produits`) : '';
