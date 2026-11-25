@@ -166,3 +166,5 @@ td.eff-st-warn { color: #9a5b1e; } td.eff-st-info { color: #3a5683; } td.eff-st-
 .eff-fs { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 14px; margin: 10px 0; }
 .eff-fs legend { font-weight: 600; padding: 0 6px; }
 .eff-muted { color: var(--muted); }
+.eff-mode { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: flex-end; background: var(--accent-soft); border-radius: 10px; padding: 10px 14px; margin: 6px 0 14px; }
+.eff-mode .eff-small { margin: 0 0 6px; flex: 1 1 280px; }

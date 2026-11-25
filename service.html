@@ -7,7 +7,7 @@
 <title>Tableau de bord du service — Pharmacie clinique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611251700">
+<link rel="stylesheet" href="assets/style.css?v=202611251730">
 </head>
 <body>
 <main class="eff-wrap">
@@ -60,9 +60,9 @@
     <footer class="eff-foot">Données confidentielles, réservées au service. <a href="./">Accueil</a> · <a href="#" id="print">Imprimer</a></footer>
   </div>
 </main>
-<script src="assets/xlsx.full.min.js?v=202611251700"></script>
-<script src="assets/core.js?v=202611251700"></script>
-<script src="assets/chat.js?v=202611251700"></script>
+<script src="assets/xlsx.full.min.js?v=202611251730"></script>
+<script src="assets/core.js?v=202611251730"></script>
+<script src="assets/chat.js?v=202611251730"></script>
 <script>
 (async function () {
   'use strict';
@@ -171,7 +171,7 @@
     if (prevReg) dr.value = prevReg;
     const has = D.conso.length > 0;
     $('empty').hidden = has; $('empty-name').textContent = D.service;
-    if (has) EFF.renderDashboard($('dash'), D, {editable: true, onChange: () => setDirty(true), chat: EFF.pharmaActive() ? (a) => EFF.chatPanel(a, () => setDirty(true)) : null}); else $('dash').replaceChildren();
+    if (has) EFF.renderDashboard($('dash'), D, {editable: true, pharma: EFF.pharmaActive(), onChange: () => setDirty(true), chat: EFF.pharmaActive() ? (a) => EFF.chatPanel(a, () => setDirty(true)) : null}); else $('dash').replaceChildren();
     renderPharma();
     const rows = D.regroupements.flatMap((g) => g.ufs.map((u) => ({u, g, f: D.fichiers[u.uf]})));
     $('uf-status').replaceChildren(el('div', {class: 'eff-tw'}, el('table', {class: 'eff-table'},

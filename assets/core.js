@@ -141,7 +141,7 @@
       ref: {horsGHS: (ref.horsGHS || []).map((r) => r.code), lppr: (ref.lppr || []).map((r) => r.code)},
       conso: (prev.conso || []).filter((l) => ufs.has(l.uf)),
       recues: (prev.recues || []).filter((u) => ufs.has(u)),
-      fichiers, github, pistes: prev.pistes || {}, cleRef: cleRef || prev.cleRef || null, decisions: prev.decisions || {},
+      fichiers, github, pistes: prev.pistes || {}, cleRef: cleRef || prev.cleRef || null, decisions: prev.decisions || {}, modes: prev.modes || {},
       dotations: Object.fromEntries(Object.entries(prev.dotations || {}).filter(([k]) => regs.some((g) => g.code === k)))
     };
   };
@@ -201,9 +201,15 @@
     for (const [k, v] of Object.entries(src)) { const u = +(v && typeof v === 'object' ? v.u : v); if (u > 0) m.set(+k, u); }
     return m;
   };
-  E.JOURS_DOTATION = 15;
-  E.COUV_MAX = 30; E.COUV_MIN = 10;
-  E.alerteCouv = (r) => (r.couv == null ? null : (r.couv > E.COUV_MAX ? 'sur' : (r.couv < E.COUV_MIN ? 'sous' : null)));
+  /* Mode de délivrance de l'UF ou du regroupement, choisi par le pharmacien : bornes de stock réputé optimal, en jours de consommation. */
+  E.MODES = {
+    nominatif: {label: 'Service en nominatif', min: 7, max: 10},
+    reglobalise: {label: 'Service en reglobalisé', min: 15, max: 21},
+    global: {label: 'Service en global', min: 21, max: 30}
+  };
+  E.MODE_DEFAUT = 'reglobalise';
+  E.modeDe = (d, code) => { const k = ((d.modes || {})[code]) || E.MODE_DEFAUT; return {id: E.MODES[k] ? k : E.MODE_DEFAUT, ...(E.MODES[k] || E.MODES[E.MODE_DEFAUT])}; };
+  E.alerteCouv = (r) => (r.couv == null || r.dot == null || r.qAn <= 0 ? null : (r.couv > r.jMax ? 'sur' : (r.couv < r.jMin ? 'sous' : null)));
   E.STATUTS = ['À augmenter', 'À réduire', 'Sans consommation', 'Hors dotation', 'Adaptée'];
 
   /* ---------- Listes de produits remboursés en sus du séjour ----------
@@ -384,7 +390,7 @@
           q: Math.round(p.q * F), v: Math.round(p.v * F), vr: p.v * F, cumul: t ? Math.round(cum / t * 1000) / 10 : null};
       });
     };
-    /* Adéquation dotation / consommation d'un regroupement : cible = 15 jours de consommation annualisée, arrondie au conditionnement supérieur. */
+    /* Adéquation dotation / consommation d'un regroupement : stock réputé optimal entre les seuils du mode de délivrance (E.MODES), en jours de consommation annualisée. */
     const pu = new Map();
     { const acc = new Map(); for (const l of L) { const a = acc.get(l.code) || [0, 0]; if (l.q > 0 && l.v > 0) { a[0] += l.q; a[1] += l.v; } acc.set(l.code, a); }
       acc.forEach(([q, v], k) => { if (q > 0) pu.set(k, v / q); }); }
@@ -394,26 +400,29 @@
       const g = regs.find((x) => x.code === code);
       const conso = new Map();
       for (const l of L) if (g.ufs.some((u) => u.uf === l.uf)) { const p = conso.get(l.code) || {q: 0, libelle: l.libelle, famille: l.famille}; p.q += l.q; conso.set(l.code, p); }
-      const J = E.JOURS_DOTATION, rows = [], condRef = E.condRef(d);
+      const mode = E.modeDe(d, code), J = mode.min, JM = mode.max, rows = [], condRef = E.condRef(d);
       const mk = (code, libelle, rangement, dot, famille) => {
-        const c = conso.get(code), qAn = c ? Math.max(0, c.q * F) : 0, besoin = qAn * J / 365, condLu = E.conditionnement(libelle);
+        const c = conso.get(code), qAn = c ? Math.max(0, c.q * F) : 0, besoin = qAn * J / 365, besoinMax = qAn * JM / 365, condLu = E.conditionnement(libelle);
         const boite = condRef.get(code) || (condLu > 1 ? condLu : null), boiteSrc = condRef.has(code) ? 'referentiel' : (condLu > 1 ? 'libelle' : null);
-        const cond = (boite || 1) <= Math.max(besoin, 1) ? (boite || 1) : 1;
-        const cible = besoin > 0 ? Math.ceil(besoin / cond) * cond : 0;
+        /* Proposition : besoin du seuil minimal arrondi à la boîte supérieure ; à l'unité si la boîte ferait dépasser le seuil maximal. */
+        let cond = boite || 1;
+        let cible = besoin > 0 ? Math.ceil(besoin / cond) * cond : 0;
+        if (cond > 1 && cible > Math.max(besoinMax, 1)) { cond = 1; cible = Math.ceil(besoin); }
         let statut;
         if (dot == null) statut = 'Hors dotation';
         else if (qAn <= 0) statut = 'Sans consommation';
-        else if (Math.abs(dot - cible) <= Math.max(cond, 0.2 * cible)) statut = 'Adaptée';
-        else statut = dot < cible ? 'À augmenter' : 'À réduire';
+        else if (dot < besoin - 1e-9 && dot < cible) statut = 'À augmenter';
+        else if (dot > Math.max(besoinMax, cible) + 1e-9) statut = 'À réduire';
+        else statut = 'Adaptée';
         const p = pu.get(code);
-        return {code, libelle, rangement: rangement || '', famille: famille || (c && c.famille) || E.familleDotation({code, rangement, libelle}), dot, qAn: Math.round(qAn), besoin: Math.round(besoin * 10) / 10, cond, boite, boiteSrc, cible,
+        return {code, libelle, rangement: rangement || '', famille: famille || (c && c.famille) || E.familleDotation({code, rangement, libelle}), dot, qAn: Math.round(qAn), besoin: Math.round(besoin * 10) / 10, besoinMax: Math.round(besoinMax * 10) / 10, jMin: J, jMax: JM, cond, boite, boiteSrc, cible,
           ecart: dot == null ? cible : cible - dot, statut, couv: dot != null && qAn > 0 ? Math.round(dot / (qAn / 365) * 10) / 10 : null, pu: p == null ? null : p, valDot: p != null && dot != null ? dot * p : null, valCible: p != null ? cible * p : null};
       };
       const inDot = new Set();
       for (const x of src) { inDot.add(x.code); rows.push(mk(x.code, x.libelle || (conso.get(x.code) || {}).libelle, x.rangement, x.dotation)); }
       for (const [k, c] of conso) if (!inDot.has(k) && c.q * F * J / 365 >= 1) rows.push(mk(k, c.libelle, '', null, c.famille));
       const sumv = (f) => Math.round(sum(rows.filter((r) => r.dot != null && r.pu != null), f));
-      return {rows, fichier: d.dotations[code].fichier, date: d.dotations[code].date, valActuelle: sumv((r) => r.valDot), valProposee: sumv((r) => (r.statut === 'Sans consommation' ? 0 : r.valCible)),
+      return {rows, mode, fichier: d.dotations[code].fichier, date: d.dotations[code].date, valActuelle: sumv((r) => r.valDot), valProposee: sumv((r) => (r.statut === 'Sans consommation' ? 0 : r.valCible)),
         sansPrix: rows.filter((r) => r.dot != null && r.pu == null).length};
     };
     return {F, total: Math.round(tot), intra: Math.round(intra), sus: Math.round(tot - intra), partIntra: tot ? Math.round(intra / tot * 1000) / 10 : null,
@@ -607,25 +616,34 @@
 
       /* 3. Dotation */
       pD.append(el('h3', {text: 'Adéquation de la dotation aux consommations annualisées'}));
+      {
+        const m = E.modeDe(d, g.code), peut = !!opts.pharma;
+        const selM = el('select', {class: 'eff-select', 'aria-label': 'Mode de délivrance'}, Object.entries(E.MODES).map(([k, x]) => el('option', {value: k, text: `${x.label} — stock de ${x.min} à ${x.max} jours`})));
+        selM.value = m.id; if (!peut) { selM.disabled = true; selM.title = 'Modifiable dans l’espace pharmacien'; }
+        selM.addEventListener('change', () => { d.modes = d.modes || {}; d.modes[g.code] = selM.value; if (opts.onChange) opts.onChange(); E.renderDashboard(root, d, opts); });
+        pD.append(el('div', {class: 'eff-mode'}, el('label', {class: 'eff-field'}, 'Mode de délivrance de ' + (g.ufs.length === 1 ? 'l’UF' : 'ce regroupement'), selM),
+          el('p', {class: 'eff-small', text: peut ? 'Choisi par le pharmacien : il fixe le stock réputé optimal (seuils minimal et maximal) utilisé pour toute l’analyse ci-dessous. Publiez pour l’enregistrer.' : 'Fixé par le pharmacien' + ((d.modes || {})[g.code] ? '' : ' (par défaut : reglobalisé)') + ' ; modifiable dans l’espace pharmacien.'})));
+      }
       const dt = c.dotation(g.code);
       if (!dt) {
         pD.append(el('div', {class: 'eff-card eff-pending'},
-          el('p', {text: 'Ce volet compare, référence par référence, la dotation de ' + (g.ufs.length === 1 ? 'l’UF' : 'ce regroupement') + ' à 15 jours de consommation annualisée, arrondie au conditionnement : à augmenter, à réduire, sans consommation, hors dotation.'}),
+          el('p', {text: 'Ce volet compare, référence par référence, la dotation de ' + (g.ufs.length === 1 ? 'l’UF' : 'ce regroupement') + ' au stock réputé optimal selon le mode de délivrance (nominatif, reglobalisé ou global), arrondi au nombre d’unités par boîte : à augmenter, à réduire, sans consommation, hors dotation.'}),
           el('p', {class: 'eff-small', text: 'En attente de l’état de la dotation (colonnes Code, Rangement, Libellé, Dotation), à déposer dans « Mettre à jour les données du service ».'})));
       } else {
         const cnt = (s) => dt.rows.filter((r) => r.statut === s).length;
         const nbDot = dt.rows.filter((r) => r.dot != null).length;
-        pD.append(el('p', {class: 'eff-note', text: `Dotation de ${nbDot} références (${dt.fichier}). Cible : ${E.JOURS_DOTATION} jours de consommation annualisée, arrondie au nombre d’unités par boîte (référentiel administratif ; à défaut lu dans le libellé : carton, boîte…), ou à l’unité quand la boîte dépasse le besoin de 15 jours. Écart toléré : une boîte ou 20 %.`}),
+        const M = dt.mode;
+        pD.append(el('p', {class: 'eff-note', text: `Dotation de ${nbDot} références (${dt.fichier}). ${M.label} : stock réputé optimal de ${M.min} à ${M.max} jours de consommation annualisée. Dotation proposée = besoin de ${M.min} jours arrondi au nombre d’unités par boîte (référentiel administratif ; à défaut lu dans le libellé), ou à l’unité quand la boîte ferait dépasser ${M.max} jours. Adaptée si la dotation actuelle couvre de ${M.min} à ${M.max} jours (ou correspond à la proposition) ; à augmenter en dessous ; à réduire au-dessus.`}),
           el('div', {class: 'eff-tiles eff-tiles-dot'},
             [['À augmenter', 'warn'], ['À réduire', 'info'], ['Sans consommation', 'bad'], ['Hors dotation', ''], ['Adaptée', 'ok']].map(([s, k]) => el('div', {class: 'eff-card eff-st-' + (k || 'none')}, el('div', {class: 'eff-tl', text: s}), el('div', {class: 'eff-tv', text: E.num(cnt(s))})))),
           el('p', {class: 'eff-small'}, 'Valeur de la dotation : ', el('b', {text: E.eur(dt.valActuelle)}), ' aujourd’hui → ', el('b', {text: E.eur(dt.valProposee)}), ' avec les ajustements proposés (références sans consommation retirées)' + (dt.sansPrix ? ` ; ${dt.sansPrix} références sans prix connu non valorisées.` : '.')));
         const nSur = dt.rows.filter((r) => E.alerteCouv(r) === 'sur').length, nSous = dt.rows.filter((r) => E.alerteCouv(r) === 'sous').length;
         pD.append(el('div', {class: 'eff-couv'},
-          el('div', {class: 'eff-couv-item eff-couv-sur'}, el('b', {text: E.num(nSur)}), ` références dont la dotation couvre plus d’un mois (> ${E.COUV_MAX} jours) de consommation moyenne`),
-          el('div', {class: 'eff-couv-item eff-couv-sous'}, el('b', {text: E.num(nSous)}), ` références dont la dotation couvre moins de ${E.COUV_MIN} jours de consommation moyenne`)),
-          el('p', {class: 'eff-small', text: 'Dans le tableau, ces références sont surlignées en bleu (plus d’un mois de stock) ou en rose (moins de 10 jours). Cliquez sur un bandeau pour les afficher seules.'}));
+          el('div', {class: 'eff-couv-item eff-couv-sur'}, el('b', {text: E.num(nSur)}), ` références dont la dotation couvre plus de ${M.max} jours de consommation moyenne`),
+          el('div', {class: 'eff-couv-item eff-couv-sous'}, el('b', {text: E.num(nSous)}), ` références dont la dotation couvre moins de ${M.min} jours de consommation moyenne`)),
+          el('p', {class: 'eff-small', text: `Dans le tableau, ces références sont surlignées en bleu (plus de ${M.max} jours de stock) ou en rose (moins de ${M.min} jours). Cliquez sur un bandeau pour les afficher seules.`}));
         const selS = el('select', {class: 'eff-select', 'aria-label': 'Statut'}, el('option', {value: 'actions', text: 'Ajustements proposés'}), el('option', {value: '*', text: 'Toutes les références'}),
-          el('option', {value: 'sur', text: `Plus d’un mois de stock (> ${E.COUV_MAX} j)`}), el('option', {value: 'sous', text: `Moins de ${E.COUV_MIN} jours de stock`}), E.STATUTS.map((s) => el('option', {value: s, text: s})));
+          el('option', {value: 'sur', text: `Plus de ${M.max} jours de stock`}), el('option', {value: 'sous', text: `Moins de ${M.min} jours de stock`}), E.STATUTS.map((s) => el('option', {value: s, text: s})));
         const selFD = el('select', {class: 'eff-select', 'aria-label': 'Type de produit'}, [['*', 'Tous les produits'], ...E.FAMILLES.map((f) => [f, f])].map(([v, l]) => el('option', {value: v, text: l})));
         d.decisions = d.decisions || {};
         const dec = d.decisions[g.code] = d.decisions[g.code] || {};
@@ -653,7 +671,7 @@
             {key: 'libelle', label: 'Référence'}, {key: 'rangement', label: 'Rangement'},
             {key: 'dot', label: 'Dotation actuelle', n: 1, fmt: (v) => (v == null ? '—' : E.num(v))}, {key: 'qAn', label: 'Conso / an', n: 1, fmt: E.num},
             {key: 'boite', label: 'Unités / boîte', n: 1, render: (r) => (r.boite == null ? el('span', {class: 'eff-muted', text: '—', title: 'Nombre d’unités par boîte inconnu'}) :
-              el('span', {class: r.boiteSrc === 'libelle' ? 'eff-pre' : null, title: (r.boiteSrc === 'libelle' ? 'Lu dans le libellé (absent du référentiel administratif)' : 'Référentiel administratif') + (r.cond === 1 && r.boite > 1 ? ' · proposition arrondie à l’unité : la boîte dépasse le besoin de 15 jours' : ''),
+              el('span', {class: r.boiteSrc === 'libelle' ? 'eff-pre' : null, title: (r.boiteSrc === 'libelle' ? 'Lu dans le libellé (absent du référentiel administratif)' : 'Référentiel administratif') + (r.cond === 1 && r.boite > 1 ? ` · proposition arrondie à l’unité : la boîte ferait dépasser ${r.jMax} jours` : ''),
                 text: E.num(r.boite) + (r.cond === 1 && r.boite > 1 ? ' *' : '')}))},
             {key: 'cible', label: 'Dotation proposée', n: 1, fmt: E.num},
             {key: 'statut', label: 'Statut', fmt: (v) => v},
@@ -679,9 +697,9 @@
         pD.querySelectorAll('.eff-couv-item').forEach((it) => { it.addEventListener('click', () => { selS.value = it.classList.contains('eff-couv-sur') ? 'sur' : 'sous'; allD = false; showD(); }); });
         const nDec = () => dt.rows.filter((r) => decidee(r) != null).length;
         pD.append(el('div', {class: 'eff-ctl'}, selFD, selS), infoD, hostD, el('div', {class: 'eff-row'}, moreD, exportD),
-          el('p', {class: 'eff-small', text: 'Unités / boîte : valeur du référentiel administratif ; en italique, lue dans le libellé faute de référentiel ; « * » = proposition arrondie à l’unité, la boîte dépassant le besoin de 15 jours.'}),
+          el('p', {class: 'eff-small', text: 'Unités / boîte : valeur du référentiel administratif ; en italique, lue dans le libellé faute de référentiel ; « * » = proposition arrondie à l’unité, la boîte faisant dépasser le seuil maximal de jours.'}),
           el('p', {class: 'eff-small', text: 'Dotation décidée : préremplie avec la dotation actuelle quand elle est jugée adaptée (en italique) ; à saisir pour les autres références' + (opts.editable ? ', puis « Publier » en bas de page pour l’enregistrer.' : '.')}),
-          el('p', {class: 'eff-small', text: 'À relire avec l’équipe avant toute modification : un produit d’urgence ou à rotation lente peut rester en dotation même sans consommation récente ; « Hors dotation » = référence consommée au moins une fois par quinzaine en moyenne mais absente de la dotation (à ajouter ou à laisser en délivrance nominative).'}));
+          el('p', {class: 'eff-small', text: 'À relire avec l’équipe avant toute modification : un produit d’urgence ou à rotation lente peut rester en dotation même sans consommation récente ; « Hors dotation » = référence dont le besoin sur le seuil minimal atteint au moins une unité mais absente de la dotation (à ajouter ou à laisser en délivrance nominative).'}));
         showD();
       }
       blocs.push(sec);
