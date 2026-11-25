@@ -228,7 +228,7 @@
     return [{nom: 'Médicaments hors GHS', type: 'Hors GHS', codes: (r.horsGHS || []).map((c) => (typeof c === 'object' ? c.code : c))},
       {nom: 'DMS LPPR', type: 'LPPR', codes: (r.lppr || []).map((c) => (typeof c === 'object' ? c.code : c))}];
   };
-  /* Pour chaque code : part de la période couverte (0 à 1) et type de financement retenu. */
+  /* Pour chaque code : part de la période couverte (0 à 1) et financement retenu = nom de la liste (celle qui couvre la plus longue durée si plusieurs). */
   E.couvertureSus = (d) => {
     const B = E.bornesPeriode(d.periode), span = B.au - B.du, per = new Map();
     for (const l of E.listesSus(d)) {
@@ -238,7 +238,7 @@
       for (const c of l.codes || []) {
         const code = typeof c === 'object' ? c.code : c;
         const x = per.get(code) || {iv: [], types: new Map()};
-        x.iv.push([a, b]); x.types.set(l.type || 'En sus', (x.types.get(l.type || 'En sus') || 0) + (b - a)); per.set(code, x);
+        const nom = l.nom || l.type || 'Liste en sus'; x.iv.push([a, b]); x.types.set(nom, (x.types.get(nom) || 0) + (b - a)); per.set(code, x);
       }
     }
     const out = new Map();
@@ -582,7 +582,7 @@
         host.replaceChildren(rows.length ? table([
           {key: 'rang', label: 'Rang', n: 1}, {key: 'libelle', label: 'Référence'}, {key: 'code', label: 'Code'},
           selF.value === '*' ? {key: 'famille', label: 'Type'} : null,
-          chk.checked ? {key: 'fin', label: 'Financement', fmt: (v) => (v === 'Intra-GHS' ? 'Intra-GHS' : v + ' (en sus)')} : null,
+          chk.checked ? {key: 'fin', label: 'Financement', fmt: (v) => v} : null,
           g.ufs.length > 1 ? {key: 'ufs', label: 'UF'} : null,
           {key: 'q', label: 'Quantité / an', n: 1, fmt: E.num}, {key: 'v', label: 'Coût / an', n: 1, fmt: E.eur},
           {key: 'pGlob', label: '% du total', n: 1, fmt: (v) => (v != null && v < 0.1 && v > 0 ? '<\u00a00,1\u00a0%' : E.pct(v))}, {key: 'cumul', label: '% cumulé', n: 1, fmt: E.pct}
