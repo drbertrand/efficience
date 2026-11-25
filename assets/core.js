@@ -253,6 +253,22 @@
     return out;
   };
 
+  /* Sous-types de médicaments, non exclusifs : injectables, oraux, frigo. Lieu de stockage de l'extraction (D, N, Q, O = injectables ;
+     A, B, C, R = voie orale ; K = réfrigérateur), à défaut rangement de la dotation, à défaut libellé. */
+  const RX_INJ = /\b(INJ|INJECTABLES?|IV|IM|SC|PERF|AMP|PROAMP|SER|SERINGUE|STYLO|BOLUS)\b/;
+  const RX_ORAL = /\b(CP|GELULES?|GEL ORAL|SACH|SACHETS?|BUV|BUVABLE|SIROP|CAPS|COMPRIMES?|ORODISP|LYOC|PER OS|GTTES|GOUTTES)\b/;
+  E.sousMed = (lieu, rangement, libelle) => {
+    const L = String(lieu || '').toUpperCase(), R = String(rangement || '').toUpperCase(), T = String(libelle || '').toUpperCase(), out = [];
+    const frigo = L === 'K' || /FRIGO|REFRIG/.test(R);
+    let inj = ['D', 'N', 'Q', 'O'].includes(L) || /INJ/.test(R), oral = ['A', 'B', 'C', 'R'].includes(L) || /CP|GELULE|BUVABLE|PER OS|ORAL/.test(R);
+    if (!inj && !oral && !['E', 'F', 'G', 'I', 'J', 'M', 'P', 'S', 'T'].includes(L)) { inj = RX_INJ.test(T); oral = !inj && RX_ORAL.test(T); }
+    if (inj) out.push('inj'); if (oral) out.push('oral'); if (frigo) out.push('frigo');
+    return out;
+  };
+  E.TYPES_FILTRE = [['*', 'Tous les produits'], ['Médicaments', 'Médicaments globaux'], ['med:inj', 'Médicaments injectables'], ['med:oral', 'Médicaments oraux'], ['med:frigo', 'Médicaments frigo'], ['Solutés', 'Solutés'], ['Stupéfiants', 'Stupéfiants'], ['DMS', 'DMS']];
+  E.typeLabel = (v) => (E.TYPES_FILTRE.find(([k]) => k === v) || [v, v])[1];
+  E.matchType = (r, v) => v === '*' || r.famille === v || (String(v).startsWith('med:') && r.famille === 'Médicaments' && (r.sous || []).includes(v.slice(4)));
+
   /* Lignes classées par famille (compte de stock) et financement (listes de produits remboursés en sus) ;
      un produit couvert sur une partie de la période seulement est scindé en une part remboursée et une part intra-GHS. */
   E.lignes = (d) => {
@@ -260,6 +276,7 @@
     for (const l of d.conso) {
       if (!ufs.has(l.uf)) continue;
       const base = {...l, famille: E.famille(l.compte, l.lieu, l.libelle)};
+      if (base.famille === 'Médicaments') base.sous = E.sousMed(l.lieu, null, l.libelle);
       const k = cov.get(l.code);
       if (!k || k.f <= 0) out.push({...base, fin: 'Intra-GHS'});
       else if (k.f >= 0.9999) out.push({...base, fin: k.type});
@@ -375,10 +392,10 @@
     /* Références d'un regroupement par coût décroissant : famille ('*' = toutes), avec ou sans les produits remboursés en sus. */
     const produits = (code, fam, avecSus) => {
       const g = regs.find((x) => x.code === code);
-      const rows = L.filter((l) => g.ufs.some((u) => u.uf === l.uf) && (fam === '*' || l.famille === fam) && (avecSus || isIntra(l)));
+      const rows = L.filter((l) => g.ufs.some((u) => u.uf === l.uf) && E.matchType(l, fam) && (avecSus || isIntra(l)));
       const m = new Map();
       for (const l of rows) {
-        const p = m.get(l.code) || {code: l.code, libelle: l.libelle, famille: l.famille, fin: l.fin, q: 0, v: 0, ufs: new Set(), partiel: null};
+        const p = m.get(l.code) || {code: l.code, libelle: l.libelle, famille: l.famille, sous: l.sous, fin: l.fin, q: 0, v: 0, ufs: new Set(), partiel: null};
         p.q += l.q; p.v += l.v; p.ufs.add(l.uf); if (l.fin !== 'Intra-GHS') p.fin = l.fin; if (l.partiel) p.partiel = l.partiel; m.set(l.code, p);
       }
       const prods = [...m.values()].filter((p) => p.v !== 0 || p.q !== 0).sort((a, b) => b.v - a.v || b.q - a.q);
@@ -386,7 +403,7 @@
       let cum = 0;
       return prods.map((p, i) => {
         cum += p.v;
-        return {rang: i + 1, code: p.code, libelle: p.libelle, famille: p.famille, fin: p.partiel && avecSus ? `${p.fin} (${Math.round(p.partiel * 100)} % de la période)` : p.fin, ufs: [...p.ufs].sort().join(', '),
+        return {rang: i + 1, code: p.code, libelle: p.libelle, famille: p.famille, sous: p.sous, fin: p.partiel && avecSus ? `${p.fin} (${Math.round(p.partiel * 100)} % de la période)` : p.fin, ufs: [...p.ufs].sort().join(', '),
           q: Math.round(p.q * F), v: Math.round(p.v * F), vr: p.v * F, cumul: t ? Math.round(cum / t * 1000) / 10 : null};
       });
     };
@@ -399,7 +416,7 @@
       if (!src) return null;
       const g = regs.find((x) => x.code === code);
       const conso = new Map();
-      for (const l of L) if (g.ufs.some((u) => u.uf === l.uf)) { const p = conso.get(l.code) || {q: 0, libelle: l.libelle, famille: l.famille}; p.q += l.q; conso.set(l.code, p); }
+      for (const l of L) if (g.ufs.some((u) => u.uf === l.uf)) { const p = conso.get(l.code) || {q: 0, libelle: l.libelle, famille: l.famille, lieu: l.lieu}; p.q += l.q; conso.set(l.code, p); }
       const mode = E.modeDe(d, code), J = mode.min, JM = mode.max, rows = [], condRef = E.condRef(d);
       const mk = (code, libelle, rangement, dot, famille) => {
         const c = conso.get(code), qAn = c ? Math.max(0, c.q * F) : 0, besoin = qAn * J / 365, besoinMax = qAn * JM / 365, condLu = E.conditionnement(libelle);
@@ -413,7 +430,8 @@
         else if (dot > Math.max(Math.ceil(besoinMax - 1e-9), cible)) statut = 'À réduire';
         else statut = 'Adaptée';
         const p = pu.get(code);
-        return {code, libelle, rangement: rangement || '', famille: famille || (c && c.famille) || E.familleDotation({code, rangement, libelle}), dot, qAn: Math.round(qAn), besoin: Math.round(besoin * 10) / 10, besoinMax: Math.round(besoinMax * 10) / 10, jMin: J, jMax: JM, cond, boite, boiteSrc, cible,
+        const fam = famille || (c && c.famille) || E.familleDotation({code, rangement, libelle});
+        return {code, libelle, rangement: rangement || '', famille: fam, sous: fam === 'Médicaments' ? E.sousMed(c && c.lieu, rangement, libelle) : [], dot, qAn: Math.round(qAn), besoin: Math.round(besoin * 10) / 10, besoinMax: Math.round(besoinMax * 10) / 10, jMin: J, jMax: JM, cond, boite, boiteSrc, cible,
           ecart: dot == null ? cible : cible - dot, statut, couv: dot != null && qAn > 0 ? Math.round(dot / (qAn / 365) * 10) / 10 : null, pu: p == null ? null : p, valDot: p != null && dot != null ? dot * p : null, valCible: p != null ? cible * p : null};
       };
       const inDot = new Set();
@@ -570,7 +588,7 @@
         el('div', {class: 'eff-leg'}, SERIES.map(([k, label], j) => el('span', {}, el('i', {style: 'background:' + COLORS[j]}), `${label} ${E.pct(g.total ? Math.round(g[k] / g.total * 1000) / 10 : null)}`))));
 
       /* 2. Références par coût décroissant */
-      const selF = el('select', {class: 'eff-select', 'aria-label': 'Type de produit'}, [['*', 'Tous les produits'], ...E.FAMILLES.map((f) => [f, f])].map(([v, l]) => el('option', {value: v, text: l})));
+      const selF = el('select', {class: 'eff-select', 'aria-label': 'Type de produit'}, E.TYPES_FILTRE.map(([v, l]) => el('option', {value: v, text: l})));
       const chk = el('input', {type: 'checkbox', checked: ''});
       const info = el('p', {class: 'eff-small'}), host = el('div'), more = el('button', {class: 'eff-btn ghost', type: 'button'});
       let all = false;
@@ -581,7 +599,7 @@
         info.textContent = rows.length ? `${rows.length} références · ${E.eur(tot)} par an` : '';
         host.replaceChildren(rows.length ? table([
           {key: 'rang', label: 'Rang', n: 1}, {key: 'libelle', label: 'Référence'}, {key: 'code', label: 'Code'},
-          selF.value === '*' ? {key: 'famille', label: 'Type'} : null,
+          selF.value === '*' || selF.value === 'Médicaments' ? {key: 'famille', label: 'Type', fmt: (v, r) => v} : null,
           chk.checked ? {key: 'fin', label: 'Financement', fmt: (v) => v} : null,
           g.ufs.length > 1 ? {key: 'ufs', label: 'UF'} : null,
           {key: 'q', label: 'Quantité / an', n: 1, fmt: E.num}, {key: 'v', label: 'Coût / an', n: 1, fmt: E.eur},
@@ -642,22 +660,25 @@
         pD.append(el('div', {class: 'eff-couv'},
           el('div', {class: 'eff-couv-item eff-couv-sur'}, el('b', {text: E.num(nSur)}), ` références dont la dotation couvre plus de ${M.max} jours de consommation moyenne`),
           el('div', {class: 'eff-couv-item eff-couv-sous'}, el('b', {text: E.num(nSous)}), ` références dont la dotation couvre moins de ${M.min} jours de consommation moyenne`)),
-          el('p', {class: 'eff-small', text: `Dans le tableau, ces références sont surlignées en bleu (plus de ${M.max} jours de stock) ou en rose (moins de ${M.min} jours). Cliquez sur un bandeau pour les afficher seules.`}));
-        const selS = el('select', {class: 'eff-select', 'aria-label': 'Statut'}, el('option', {value: 'actions', text: 'Ajustements proposés'}), el('option', {value: '*', text: 'Toutes les références'}),
-          el('option', {value: 'sur', text: `Plus de ${M.max} jours de stock`}), el('option', {value: 'sous', text: `Moins de ${M.min} jours de stock`}), E.STATUTS.map((s) => el('option', {value: s, text: s})));
-        const selFD = el('select', {class: 'eff-select', 'aria-label': 'Type de produit'}, [['*', 'Tous les produits'], ...E.FAMILLES.map((f) => [f, f])].map(([v, l]) => el('option', {value: v, text: l})));
+          el('p', {class: 'eff-small', text: `Dans le tableau, ces références sont surlignées en bleu (plus de ${M.max} jours de stock) ou en rose (moins de ${M.min} jours). Cliquez sur un bandeau pour afficher les quantités excédentaires ou insuffisantes.`}));
+        const selS = el('select', {class: 'eff-select', 'aria-label': 'Statut'}, [
+          ['*', 'Liste globale (avec le code couleur)'], ['Adaptée', 'Quantités paraissant optimales'], ['À augmenter', 'Quantités insuffisantes'],
+          ['À réduire', 'Quantités excédentaires'], ['Hors dotation', 'Produits consommés mais hors dotation'], ['Sans consommation', 'Produits en dotation sans consommation']
+        ].map(([v, t]) => el('option', {value: v, text: t})));
+        const selFD = el('select', {class: 'eff-select', 'aria-label': 'Type de produit'}, E.TYPES_FILTRE.map(([v, l]) => el('option', {value: v, text: l})));
         d.decisions = d.decisions || {};
         const dec = d.decisions[g.code] = d.decisions[g.code] || {};
         const decidee = (r) => (dec[r.code] != null ? dec[r.code] : (r.statut === 'Adaptée' ? r.dot : null));
         /* Jauge : références en dotation après décisions. Une référence en dotation y reste sauf « 0 » saisi ; une référence hors dotation y entre si une quantité > 0 est saisie. */
         const jauge = el('aside', {class: 'eff-gauge', 'aria-live': 'polite', 'aria-label': 'Références en dotation'});
         const majJauge = () => {
-          const init = dt.rows.filter((r) => r.dot != null);
-          const retirees = init.filter((r) => dec[r.code] === 0), ajoutees = dt.rows.filter((r) => r.dot == null && dec[r.code] > 0);
+          const fam = typeof selFD === 'undefined' ? '*' : selFD.value, base = dt.rows.filter((r) => E.matchType(r, fam));
+          const init = base.filter((r) => r.dot != null);
+          const retirees = init.filter((r) => dec[r.code] === 0), ajoutees = base.filter((r) => r.dot == null && dec[r.code] > 0);
           const n0 = init.length, n = n0 - retirees.length + ajoutees.length, maxN = Math.max(n0, n, 1);
           const parFam = E.FAMILLES.map((f) => [f, init.filter((r) => r.famille === f && dec[r.code] !== 0).length + ajoutees.filter((r) => r.famille === f).length]).filter(([, k]) => k);
-          jauge.replaceChildren(
-            el('div', {class: 'eff-gauge-t', text: 'Références en dotation'}),
+          jauge.replaceChildren(...[
+            el('div', {class: 'eff-gauge-t', text: 'Références en dotation' + (fam === '*' ? '' : ' — ' + E.typeLabel(fam))}),
             el('div', {class: 'eff-gauge-n', text: E.num(n)}),
             el('div', {class: 'eff-gauge-bar', title: `${n} références après décisions (${n0} au départ)`},
               el('i', {class: 'eff-gauge-fill', style: `height:${Math.round(n / maxN * 100)}%`}),
@@ -667,8 +688,8 @@
               el('dt', {text: 'Ajoutées'}), el('dd', {class: ajoutees.length ? 'eff-gauge-plus' : null, text: (ajoutees.length ? '+' : '') + E.num(ajoutees.length)}),
               el('dt', {text: 'Retirées'}), el('dd', {class: retirees.length ? 'eff-gauge-moins' : null, text: (retirees.length ? '−' : '') + E.num(retirees.length)}),
               el('dt', {class: 'eff-gauge-tot', text: 'Après décisions'}), el('dd', {class: 'eff-gauge-tot', text: E.num(n)})),
-            parFam.length ? el('ul', {class: 'eff-gauge-f'}, parFam.map(([f, k]) => el('li', {}, el('span', {text: f}), el('b', {text: E.num(k)})))) : null,
-            el('p', {class: 'eff-gauge-note', text: '« 0 » dans « Dotation décidée » retire la référence ; une quantité saisie pour un produit hors dotation l’ajoute. Les changements de quantité ne modifient pas la jauge.'}));
+            fam === '*' && parFam.length ? el('ul', {class: 'eff-gauge-f'}, parFam.map(([f, k]) => el('li', {}, el('span', {text: f}), el('b', {text: E.num(k)})))) : null,
+            el('p', {class: 'eff-gauge-note', text: '« 0 » dans « Dotation décidée » retire la référence ; une quantité saisie pour un produit hors dotation l’ajoute. Les changements de quantité ne modifient pas la jauge.'})].filter(Boolean));
         };
         const exportD = el('button', {class: 'eff-btn ghost', type: 'button', text: 'Exporter la dotation décidée (CSV)'});
         exportD.addEventListener('click', () => {
@@ -686,7 +707,7 @@
         const ordre = (s) => E.STATUTS.indexOf(s);
         const showD = () => {
           const v = selS.value;
-          const rows = dt.rows.filter((r) => (selFD.value === '*' || r.famille === selFD.value) && (v === '*' || (v === 'actions' ? r.statut !== 'Adaptée' : (v === 'sur' || v === 'sous' ? E.alerteCouv(r) === v : r.statut === v))))
+          const rows = dt.rows.filter((r) => E.matchType(r, selFD.value) && (v === '*' || r.statut === v))
             .sort(v === 'sur' ? (a, b) => b.couv - a.couv : v === 'sous' ? (a, b) => a.couv - b.couv :
               (a, b) => ordre(a.statut) - ordre(b.statut) || Math.abs(b.ecart * (b.pu || 0)) - Math.abs(a.ecart * (a.pu || 0)) || b.qAn - a.qAn);
           infoD.textContent = `${rows.length} références`;
@@ -720,8 +741,8 @@
           hostD.querySelectorAll('tbody tr').forEach((tr, i) => { const al = E.alerteCouv(rows[i]); if (al) tr.classList.add('eff-row-' + al); const td = tr.querySelector('td[data-k=statut]'); if (td) td.className = 'eff-st eff-st-' + ({'À augmenter': 'warn', 'À réduire': 'info', 'Sans consommation': 'bad', 'Hors dotation': 'none', 'Adaptée': 'ok'})[rows[i].statut]; });
         };
         selS.addEventListener('change', () => { allD = false; showD(); });
-        selFD.addEventListener('change', () => { allD = false; showD(); });
-        pD.querySelectorAll('.eff-couv-item').forEach((it) => { it.addEventListener('click', () => { selS.value = it.classList.contains('eff-couv-sur') ? 'sur' : 'sous'; allD = false; showD(); }); });
+        selFD.addEventListener('change', () => { allD = false; showD(); majJauge(); });
+        pD.querySelectorAll('.eff-couv-item').forEach((it) => { it.addEventListener('click', () => { selS.value = it.classList.contains('eff-couv-sur') ? 'À réduire' : 'À augmenter'; allD = false; showD(); }); });
         const nDec = () => dt.rows.filter((r) => decidee(r) != null).length;
         majJauge();
         pD.append(el('div', {class: 'eff-ctl'}, selFD, selS), infoD, el('div', {class: 'eff-dot-wrap'}, el('div', {class: 'eff-tblwrap'}, hostD, foldD), jauge), el('div', {class: 'eff-row'}, moreD, exportD),
