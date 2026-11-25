@@ -489,7 +489,10 @@
 
   const table = (cols, rows, total) => {
     const t = el('table', {class: 'eff-table'},
-      el('thead', {}, el('tr', {}, cols.map((c) => el('th', {class: c.n ? 'n' : null, text: c.label})))),
+      el('thead', {}, el('tr', {}, cols.map((c) => (c.onSort
+        ? el('th', {class: c.n ? 'n' : null, 'aria-sort': c.sorted === 'asc' ? 'ascending' : c.sorted === 'desc' ? 'descending' : 'none'},
+          el('button', {type: 'button', class: 'eff-sort' + (c.sorted ? ' on' : ''), title: c.sortTitle || 'Trier', onclick: c.onSort}, c.label, el('span', {class: 'eff-sort-i', 'aria-hidden': 'true', text: c.sorted === 'asc' ? ' ▲' : c.sorted === 'desc' ? ' ▼' : ' ⇅'})))
+        : el('th', {class: c.n ? 'n' : null, text: c.label}))))),
       el('tbody', {}, rows.map((r) => el('tr', {class: r._muted ? 'muted' : null}, cols.map((c) => c.render ? el('td', {class: c.n ? 'n' : null, 'data-k': c.key}, c.render(r)) : el('td', {class: c.n ? 'n' : null, 'data-k': c.key, text: c.fmt ? c.fmt(r[c.key], r) : (r[c.key] == null ? '—' : r[c.key])}))))));
     if (total) t.append(el('tfoot', {}, el('tr', {}, cols.map((c) => el('td', {class: c.n ? 'n' : null, text: total[c.key] == null ? '' : total[c.key]})))));
     return el('div', {class: 'eff-tw'}, t);
@@ -705,21 +708,25 @@
         const foldD = el('button', {class: 'eff-btn eff-fold', type: 'button', text: '▲ Replier le tableau', hidden: ''});
         foldD.addEventListener('click', () => { allD = false; showD(); hostD.scrollIntoView({behavior: 'smooth', block: 'start'}); });
         const ordre = (s) => E.STATUTS.indexOf(s);
+        let tri = {k: 'statut', dir: 'asc'};
+        const trier = (k, dir0) => { tri = tri.k === k ? {k, dir: tri.dir === 'asc' ? 'desc' : 'asc'} : {k, dir: dir0}; showD(); };
+        const sens = (k) => (tri.k === k ? tri.dir : null);
         const showD = () => {
           const v = selS.value;
           const rows = dt.rows.filter((r) => E.matchType(r, selFD.value) && (v === '*' || r.statut === v))
-            .sort(v === 'sur' ? (a, b) => b.couv - a.couv : v === 'sous' ? (a, b) => a.couv - b.couv :
+            .sort(tri.k === 'libelle' ? (a, b) => (tri.dir === 'asc' ? 1 : -1) * String(a.libelle).localeCompare(String(b.libelle), 'fr', {sensitivity: 'base'}) :
+              tri.k === 'qAn' ? (a, b) => (tri.dir === 'asc' ? 1 : -1) * (a.qAn - b.qAn) || String(a.libelle).localeCompare(String(b.libelle), 'fr') :
               (a, b) => ordre(a.statut) - ordre(b.statut) || Math.abs(b.ecart * (b.pu || 0)) - Math.abs(a.ecart * (a.pu || 0)) || b.qAn - a.qAn);
           infoD.textContent = `${rows.length} références`;
           hostD.classList.add('eff-dot-table');
           hostD.replaceChildren(rows.length ? table([
-            {key: 'libelle', label: 'Référence'}, {key: 'rangement', label: 'Rangement'},
-            {key: 'dot', label: 'Dotation actuelle', n: 1, fmt: (v) => (v == null ? '—' : E.num(v))}, {key: 'qAn', label: 'Conso / an', n: 1, fmt: E.num},
+            {key: 'libelle', label: 'Référence', onSort: () => trier('libelle', 'asc'), sorted: sens('libelle'), sortTitle: 'Trier par ordre alphabétique'}, {key: 'rangement', label: 'Rangement'},
+            {key: 'dot', label: 'Dotation actuelle', n: 1, fmt: (v) => (v == null ? '—' : E.num(v))}, {key: 'qAn', label: 'Conso / an', n: 1, fmt: E.num, onSort: () => trier('qAn', 'desc'), sorted: sens('qAn'), sortTitle: 'Trier par quantité consommée par an'},
             {key: 'boite', label: 'Unités / boîte', n: 1, render: (r) => (r.boite == null ? el('span', {class: 'eff-muted', text: '—', title: 'Nombre d’unités par boîte inconnu'}) :
               el('span', {class: r.boiteSrc === 'libelle' ? 'eff-pre' : null, title: r.boiteSrc === 'libelle' ? 'Lu dans le libellé (absent du référentiel administratif)' : 'Référentiel administratif',
                 text: E.num(r.boite)}))},
             {key: 'cible', label: 'Dotation proposée', n: 1, fmt: E.num},
-            {key: 'statut', label: 'Statut', fmt: (v) => v},
+            {key: 'statut', label: 'Statut', fmt: (v) => v, onSort: () => { tri = {k: 'statut', dir: 'asc'}; showD(); }, sorted: tri.k === 'statut' ? 'asc' : null, sortTitle: 'Revenir à l’ordre par statut (ajustements les plus importants en premier)'},
             {key: 'decidee', label: 'Dotation décidée', n: 1, render: (r) => {
               const val = decidee(r), pre = dec[r.code] == null && val != null;
               if (!opts.editable) return el('span', {class: pre ? 'eff-pre' : null, text: val == null ? '—' : E.num(val)});

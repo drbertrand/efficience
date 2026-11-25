@@ -192,3 +192,8 @@ td.eff-st-warn { color: #9a5b1e; } td.eff-st-info { color: #3a5683; } td.eff-st-
 .eff-fold { position: sticky; bottom: 14px; z-index: 5; display: block; margin: 10px 0 0 auto; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
 .eff-fold[hidden] { display: none; }
 @media print { .eff-fold { display: none !important; } }
+.eff-sort { font: inherit; font-weight: inherit; color: inherit; background: none; border: 0; padding: 2px 4px; margin: -2px -4px; border-radius: 6px; cursor: pointer; text-align: inherit; white-space: nowrap; }
+.eff-sort:hover { background: var(--accent-soft); }
+.eff-sort.on { color: var(--accent); }
+.eff-sort-i { font-size: .8em; opacity: .75; }
+@media print { .eff-sort-i { display: none; } }
