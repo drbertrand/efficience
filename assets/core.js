@@ -714,20 +714,29 @@
         const showD = () => {
           const v = selS.value;
           const rows = dt.rows.filter((r) => E.matchType(r, selFD.value) && (v === '*' || r.statut === v))
-            .sort(tri.k === 'libelle' ? (a, b) => (tri.dir === 'asc' ? 1 : -1) * String(a.libelle).localeCompare(String(b.libelle), 'fr', {sensitivity: 'base'}) :
-              tri.k === 'qAn' ? (a, b) => (tri.dir === 'asc' ? 1 : -1) * (a.qAn - b.qAn) || String(a.libelle).localeCompare(String(b.libelle), 'fr') :
-              (a, b) => ordre(a.statut) - ordre(b.statut) || Math.abs(b.ecart * (b.pu || 0)) - Math.abs(a.ecart * (a.pu || 0)) || b.qAn - a.qAn);
+            .sort((a, b) => {
+              const m = tri.dir === 'asc' ? 1 : -1, txt = (x) => String(x || ''), alpha = (x, y) => txt(x).localeCompare(txt(y), 'fr', {sensitivity: 'base'});
+              const defaut = ordre(a.statut) - ordre(b.statut) || Math.abs(b.ecart * (b.pu || 0)) - Math.abs(a.ecart * (a.pu || 0)) || b.qAn - a.qAn;
+              if (tri.k === 'statut') return tri.dir === 'asc' ? defaut : -(ordre(a.statut) - ordre(b.statut)) || defaut;
+              if (tri.k === 'rangement' && !txt(a.rangement) !== !txt(b.rangement)) return txt(a.rangement) ? -1 : 1;
+              if (tri.k === 'libelle' || tri.k === 'rangement') return m * alpha(a[tri.k], b[tri.k]) || alpha(a.libelle, b.libelle);
+              const val = (r) => (tri.k === 'decidee' ? decidee(r) : r[tri.k]);
+              const va = val(a), vb = val(b);
+              if (va == null && vb == null) return alpha(a.libelle, b.libelle);
+              if (va == null) return 1; if (vb == null) return -1;
+              return m * (va - vb) || alpha(a.libelle, b.libelle);
+            });
           infoD.textContent = `${rows.length} références`;
           hostD.classList.add('eff-dot-table');
           hostD.replaceChildren(rows.length ? table([
-            {key: 'libelle', label: 'Référence', onSort: () => trier('libelle', 'asc'), sorted: sens('libelle'), sortTitle: 'Trier par ordre alphabétique'}, {key: 'rangement', label: 'Rangement'},
-            {key: 'dot', label: 'Dotation actuelle', n: 1, fmt: (v) => (v == null ? '—' : E.num(v))}, {key: 'qAn', label: 'Conso / an', n: 1, fmt: E.num, onSort: () => trier('qAn', 'desc'), sorted: sens('qAn'), sortTitle: 'Trier par quantité consommée par an'},
-            {key: 'boite', label: 'Unités / boîte', n: 1, render: (r) => (r.boite == null ? el('span', {class: 'eff-muted', text: '—', title: 'Nombre d’unités par boîte inconnu'}) :
+            {key: 'libelle', label: 'Référence', onSort: () => trier('libelle', 'asc'), sorted: sens('libelle'), sortTitle: 'Trier par ordre alphabétique'}, {key: 'rangement', label: 'Rangement', onSort: () => trier('rangement', 'asc'), sorted: sens('rangement'), sortTitle: 'Trier par rangement'},
+            {key: 'dot', label: 'Dotation actuelle', n: 1, fmt: (v) => (v == null ? '—' : E.num(v)), onSort: () => trier('dot', 'desc'), sorted: sens('dot'), sortTitle: 'Trier par dotation actuelle'}, {key: 'qAn', label: 'Conso / an', n: 1, fmt: E.num, onSort: () => trier('qAn', 'desc'), sorted: sens('qAn'), sortTitle: 'Trier par quantité consommée par an'},
+            {key: 'boite', label: 'Unités / boîte', n: 1, onSort: () => trier('boite', 'desc'), sorted: sens('boite'), sortTitle: 'Trier par nombre d’unités par boîte', render: (r) => (r.boite == null ? el('span', {class: 'eff-muted', text: '—', title: 'Nombre d’unités par boîte inconnu'}) :
               el('span', {class: r.boiteSrc === 'libelle' ? 'eff-pre' : null, title: r.boiteSrc === 'libelle' ? 'Lu dans le libellé (absent du référentiel administratif)' : 'Référentiel administratif',
                 text: E.num(r.boite)}))},
-            {key: 'cible', label: 'Dotation proposée', n: 1, fmt: E.num},
-            {key: 'statut', label: 'Statut', fmt: (v) => v, onSort: () => { tri = {k: 'statut', dir: 'asc'}; showD(); }, sorted: tri.k === 'statut' ? 'asc' : null, sortTitle: 'Revenir à l’ordre par statut (ajustements les plus importants en premier)'},
-            {key: 'decidee', label: 'Dotation décidée', n: 1, render: (r) => {
+            {key: 'cible', label: 'Dotation proposée', n: 1, fmt: E.num, onSort: () => trier('cible', 'desc'), sorted: sens('cible'), sortTitle: 'Trier par dotation proposée'},
+            {key: 'statut', label: 'Statut', fmt: (v) => v, onSort: () => trier('statut', 'asc'), sorted: sens('statut'), sortTitle: 'Trier par statut (ajustements les plus importants en premier)'},
+            {key: 'decidee', label: 'Dotation décidée', n: 1, onSort: () => trier('decidee', 'desc'), sorted: sens('decidee'), sortTitle: 'Trier par dotation décidée', render: (r) => {
               const val = decidee(r), pre = dec[r.code] == null && val != null;
               if (!opts.editable) return el('span', {class: pre ? 'eff-pre' : null, text: val == null ? '—' : E.num(val)});
               const inp = el('input', {class: 'eff-dec' + (pre ? ' eff-pre' : ''), type: 'number', min: '0', step: '1', inputmode: 'numeric', value: val == null ? '' : String(val), 'aria-label': 'Dotation décidée pour ' + r.libelle,
