@@ -618,12 +618,12 @@
       /* 3. Dotation */
       pD.append(el('h3', {text: 'Adéquation de la dotation aux consommations annualisées'}));
       {
-        const m = E.modeDe(d, g.code), peut = !!opts.pharma;
-        const selM = el('select', {class: 'eff-select', 'aria-label': 'Mode de délivrance'}, Object.entries(E.MODES).map(([k, x]) => el('option', {value: k, text: `${x.label} — stock de ${x.min} à ${x.max} jours`})));
-        selM.value = m.id; if (!peut) { selM.disabled = true; selM.title = 'Modifiable dans l’espace pharmacien'; }
+        const m = E.modeDe(d, g.code), peut = !!opts.editable;
+        const selM = el('select', {class: 'eff-select', 'aria-label': 'Type de dispensation'}, Object.entries(E.MODES).map(([k, x]) => el('option', {value: k, text: `${x.label} — stock de ${x.min} à ${x.max} jours`})));
+        selM.value = m.id; if (!peut) selM.disabled = true;
         selM.addEventListener('change', () => { d.modes = d.modes || {}; d.modes[g.code] = selM.value; if (opts.onChange) opts.onChange(); E.renderDashboard(root, d, opts); });
-        pD.append(el('div', {class: 'eff-mode'}, el('label', {class: 'eff-field'}, 'Mode de délivrance de ' + (g.ufs.length === 1 ? 'l’UF' : 'ce regroupement'), selM),
-          el('p', {class: 'eff-small', text: peut ? 'Choisi par le pharmacien : il fixe le stock réputé optimal (seuils minimal et maximal) utilisé pour toute l’analyse ci-dessous. Publiez pour l’enregistrer.' : 'Fixé par le pharmacien' + ((d.modes || {})[g.code] ? '' : ' (par défaut : nominatif, le plus restrictif)') + ' ; modifiable dans l’espace pharmacien.'})));
+        pD.append(el('div', {class: 'eff-mode'}, el('label', {class: 'eff-field'}, 'Type de dispensation de ' + (g.ufs.length === 1 ? 'l’UF' : 'ce regroupement'), selM),
+          el('p', {class: 'eff-small', text: 'Le type de dispensation fixe le stock réputé optimal (seuils minimal et maximal) utilisé pour toute l’analyse ci-dessous' + ((d.modes || {})[g.code] ? '' : ' ; par défaut : nominatif, le plus restrictif') + (peut ? '. Cliquez sur « Publier » en bas de page pour enregistrer le choix.' : '.')})));
       }
       const dt = c.dotation(g.code);
       if (!dt) {
