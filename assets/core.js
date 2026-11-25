@@ -103,7 +103,7 @@
   /* Jeu de données d'un service (chiffré tel quel) : configuration posée par l'administrateur
      + consommations brutes déposées par le service. */
   E.defaultPeriode = () => { const n = new Date(); return {exercice: n.getFullYear(), mois: Math.max(1, n.getMonth())}; };
-  E.buildService = (svc, ref, github, prev) => {
+  E.buildService = (svc, ref, github, prev, cleRef) => {
     const regs = E.parseRegroupements(svc.regroupements);
     const ufNom = new Map((ref.uf || []).map((r) => [r.code, r.libelle]));
     const ufs = new Set(regs.flatMap((g) => g.ufs));
@@ -117,7 +117,7 @@
       ref: {horsGHS: (ref.horsGHS || []).map((r) => r.code), lppr: (ref.lppr || []).map((r) => r.code)},
       conso: (prev.conso || []).filter((l) => ufs.has(l.uf)),
       recues: (prev.recues || []).filter((u) => ufs.has(u)),
-      fichiers, github, pistes: prev.pistes || {},
+      fichiers, github, pistes: prev.pistes || {}, cleRef: cleRef || prev.cleRef || null, decisions: prev.decisions || {},
       dotations: Object.fromEntries(Object.entries(prev.dotations || {}).filter(([k]) => regs.some((g) => g.code === k)))
     };
   };
@@ -176,10 +176,71 @@
   E.alerteCouv = (r) => (r.couv == null ? null : (r.couv > E.COUV_MAX ? 'sur' : (r.couv < E.COUV_MIN ? 'sous' : null)));
   E.STATUTS = ['À augmenter', 'À réduire', 'Sans consommation', 'Hors dotation', 'Adaptée'];
 
-  /* Lignes classées par famille  /* Lignes classées par famille (compte de stock) et financement (listes hors GHS / LPPR). */
+  /* ---------- Listes de produits remboursés en sus du séjour ----------
+     Déposées par les agents administratifs (referentiels.html), chiffrées dans data/referentiels.enc.json avec une clé
+     partagée (d.cleRef) que chaque service reçoit dans ses données. Chaque liste a un type (Hors GHS, LPPR…) et une
+     validité : toute la période analysée, ou à partir du / jusqu'au / entre deux dates. Les extractions ne sont pas datées :
+     la part remboursée d'un produit est estimée au prorata de la durée couverte sur la période (consommation supposée régulière). */
+  const DAY = 86400000;
+  const isoDay = (s) => (s ? Date.parse(s + 'T00:00:00Z') : NaN);
+  E.bornesPeriode = (p) => ({du: Date.UTC(+p.exercice, 0, 1), au: Date.UTC(+p.exercice, +p.mois, 1)});
+  E.validiteTexte = (l) => (l.du && l.au ? `du ${E.dateFr(l.du)} au ${E.dateFr(l.au)}` : l.du ? `à partir du ${E.dateFr(l.du)}` : l.au ? `jusqu’au ${E.dateFr(l.au)}` : 'toute l’année d’analyse');
+  E.dateFr = (s) => (s ? new Date(s + 'T00:00:00Z').toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : '');
+  E.listesSus = (d) => {
+    if (d._ref && Array.isArray(d._ref.listes)) return d._ref.listes.filter((l) => l.active !== false);
+    const r = d.ref || {};
+    return [{nom: 'Médicaments hors GHS', type: 'Hors GHS', codes: (r.horsGHS || []).map((c) => (typeof c === 'object' ? c.code : c))},
+      {nom: 'DMS LPPR', type: 'LPPR', codes: (r.lppr || []).map((c) => (typeof c === 'object' ? c.code : c))}];
+  };
+  /* Pour chaque code : part de la période couverte (0 à 1) et type de financement retenu. */
+  E.couvertureSus = (d) => {
+    const B = E.bornesPeriode(d.periode), span = B.au - B.du, per = new Map();
+    for (const l of E.listesSus(d)) {
+      const a = Math.max(B.du, Number.isFinite(isoDay(l.du)) ? isoDay(l.du) : B.du);
+      const b = Math.min(B.au, Number.isFinite(isoDay(l.au)) ? isoDay(l.au) + DAY : B.au);
+      if (b <= a) continue;
+      for (const c of l.codes || []) {
+        const code = typeof c === 'object' ? c.code : c;
+        const x = per.get(code) || {iv: [], types: new Map()};
+        x.iv.push([a, b]); x.types.set(l.type || 'En sus', (x.types.get(l.type || 'En sus') || 0) + (b - a)); per.set(code, x);
+      }
+    }
+    const out = new Map();
+    per.forEach((x, code) => {
+      x.iv.sort((m, n) => m[0] - n[0]);
+      let tot = 0, cur = null;
+      for (const [a, b] of x.iv) { if (!cur || a > cur[1]) { if (cur) tot += cur[1] - cur[0]; cur = [a, b]; } else cur[1] = Math.max(cur[1], b); }
+      if (cur) tot += cur[1] - cur[0];
+      const type = [...x.types.entries()].sort((m, n) => n[1] - m[1])[0][0];
+      out.set(code, {f: span > 0 ? Math.min(1, tot / span) : 0, type});
+    });
+    return out;
+  };
+
+  /* Lignes classées par famille (compte de stock) et financement (listes de produits remboursés en sus) ;
+     un produit couvert sur une partie de la période seulement est scindé en une part remboursée et une part intra-GHS. */
   E.lignes = (d) => {
-    const hg = new Set(d.ref.horsGHS), lp = new Set(d.ref.lppr), ufs = new Set(E.serviceUFs(d));
-    return d.conso.filter((l) => ufs.has(l.uf)).map((l) => ({...l, famille: E.famille(l.compte, l.lieu, l.libelle), fin: hg.has(l.code) ? 'Hors GHS' : (lp.has(l.code) ? 'LPPR' : 'Intra-GHS')}));
+    const ufs = new Set(E.serviceUFs(d)), cov = E.couvertureSus(d), out = [];
+    for (const l of d.conso) {
+      if (!ufs.has(l.uf)) continue;
+      const base = {...l, famille: E.famille(l.compte, l.lieu, l.libelle)};
+      const k = cov.get(l.code);
+      if (!k || k.f <= 0) out.push({...base, fin: 'Intra-GHS'});
+      else if (k.f >= 0.9999) out.push({...base, fin: k.type});
+      else out.push({...base, q: l.q * k.f, v: l.v * k.f, fin: k.type, partiel: k.f}, {...base, q: l.q * (1 - k.f), v: l.v * (1 - k.f), fin: 'Intra-GHS', partiel: k.f});
+    }
+    return out;
+  };
+
+  /* Charge les listes partagées dans d._ref (non enregistré avec le service). Renvoie un message d'avertissement ou null. */
+  E.loadReferentiels = async (d) => {
+    if (!d.cleRef) return null;
+    try {
+      const r = await fetch('data/referentiels.enc.json?t=' + Date.now(), {cache: 'no-store'});
+      if (!r.ok) throw new Error('absent');
+      d._ref = await E.decrypt(await r.json(), d.cleRef);
+      return null;
+    } catch (e) { delete d._ref; return 'Les listes de produits remboursés en sus n’ont pas pu être chargées : les listes enregistrées avec le service sont utilisées.'; }
   };
 
   /* ---------- Publication GitHub (API Contents) ---------- */
@@ -215,10 +276,11 @@
   E.publishService = async (d, password) => {
     const gh = E.github(d.github);
     d.genere = new Date().toISOString();
-    await gh.put(`data/${d.id}.enc.json`, JSON.stringify(await E.encrypt(d, password)), `Efficience : mise à jour ${d.service}`);
+    const {_ref, ...aEnregistrer} = d;
+    await gh.put(`data/${d.id}.enc.json`, JSON.stringify(await E.encrypt(aEnregistrer, password)), `Efficience : mise à jour ${d.service}`);
     let m = {titre: E.TITRE, services: []};
     try { const cur = await gh.raw('data/manifest.json'); if (cur) m = JSON.parse(cur); } catch (e) {}
-    m.services = (m.services || []).filter((s) => s.id !== d.id).concat({id: d.id, nom: d.service, maj: d.genere});
+    m.services = (m.services || []).filter((s) => s.id !== d.id).concat({id: d.id, nom: d.service, maj: d.genere, exercice: d.periode && d.periode.exercice});
     m.maj = d.genere;
     await gh.put('data/manifest.json', JSON.stringify(m, null, 2), 'Efficience : liste des services');
   };
@@ -280,15 +342,15 @@
       const rows = L.filter((l) => g.ufs.some((u) => u.uf === l.uf) && (fam === '*' || l.famille === fam) && (avecSus || isIntra(l)));
       const m = new Map();
       for (const l of rows) {
-        const p = m.get(l.code) || {code: l.code, libelle: l.libelle, famille: l.famille, fin: l.fin, q: 0, v: 0, ufs: new Set()};
-        p.q += l.q; p.v += l.v; p.ufs.add(l.uf); m.set(l.code, p);
+        const p = m.get(l.code) || {code: l.code, libelle: l.libelle, famille: l.famille, fin: l.fin, q: 0, v: 0, ufs: new Set(), partiel: null};
+        p.q += l.q; p.v += l.v; p.ufs.add(l.uf); if (l.fin !== 'Intra-GHS') p.fin = l.fin; if (l.partiel) p.partiel = l.partiel; m.set(l.code, p);
       }
       const prods = [...m.values()].filter((p) => p.v !== 0 || p.q !== 0).sort((a, b) => b.v - a.v || b.q - a.q);
       const t = sum(prods, (p) => p.v);
       let cum = 0;
       return prods.map((p, i) => {
         cum += p.v;
-        return {rang: i + 1, code: p.code, libelle: p.libelle, famille: p.famille, fin: p.fin, ufs: [...p.ufs].sort().join(', '),
+        return {rang: i + 1, code: p.code, libelle: p.libelle, famille: p.famille, fin: p.partiel && avecSus ? `${p.fin} (${Math.round(p.partiel * 100)} % de la période)` : p.fin, ufs: [...p.ufs].sort().join(', '),
           q: Math.round(p.q * F), v: Math.round(p.v * F), vr: p.v * F, cumul: t ? Math.round(cum / t * 1000) / 10 : null};
       });
     };
@@ -345,6 +407,8 @@
     const pt = await crypto.subtle.decrypt({name: 'AES-GCM', iv: unb64(env.iv)}, key, unb64(env.data));
     return JSON.parse(new TextDecoder().decode(pt));
   };
+  /* Clé aléatoire (base64url, 32 octets) pour chiffrer les listes partagées. */
+  E.genKey = () => { const b = crypto.getRandomValues(new Uint8Array(32)); return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
   E.genPassword = () => {
     const alpha = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const r = crypto.getRandomValues(new Uint32Array(15));
@@ -428,8 +492,8 @@
     root.append(
       el('header', {class: 'eff-head'},
         el('p', {class: 'eff-kicker', text: E.TITRE}),
-        el('h1', {text: d.service}),
-        el('p', {class: 'eff-sub', text: `Exercice ${p.exercice} · consommations arrêtées de janvier à ${E.MOIS[p.mois - 1]} (${p.mois} mois), extrapolées sur 12 mois · valorisation au PMP`}),
+        el('h1', {}, d.service, ' ', el('span', {class: 'eff-annee', text: `Année d’analyse ${p.exercice}`})),
+        el('p', {class: 'eff-sub', text: `Consommations de janvier à ${E.MOIS[p.mois - 1]} ${p.exercice} (${p.mois} mois), extrapolées sur 12 mois` + (p.extraction ? ` · extraction du ${E.dateFr(p.extraction)}` : '') + ' · valorisation au PMP'}),
         el('p', {class: 'eff-lead'}, 'Sur une année, le service consommerait ', el('b', {text: E.eur(c.total)}), ' de produits pharmaceutiques, dont ',
           el('b', {text: E.pct(c.partIntra)}), ' à la charge de l’hôpital (intra-GHS) et ', el('b', {text: E.eur(c.sus)}), ' remboursés en sus du séjour.'),
         multi ? el('nav', {class: 'eff-tabs', role: 'tablist', 'aria-label': 'Affichage'},
@@ -673,7 +737,8 @@
       el('li', {text: 'Source : extractions « Analyse_conso » du logiciel de gestion, une par UF, valorisées au PMP de la dernière balance définitive ; les retours sont déduits.'}),
       el('li', {text: `Annualisation : montant de la période × 12 / ${p.mois}.`}),
       el('li', {text: 'Familles selon le compte de stock : solutés = poches et flacons de perfusion du compte H942110 (hors nutrition parentérale) ; autres produits des comptes H9421… = médicaments (ampoules d’électrolytes et nutrition parentérale comprises) ; H9422… = DMS.'}),
-      el('li', {text: 'Financement : produit inscrit sur la liste des médicaments hors GHS ou des DMS LPPR = remboursé en sus ; sinon intra-GHS.'}),
+      el('li', {text: 'Financement : produit figurant sur une liste de produits remboursés en sus du séjour (hors GHS, LPPR…) = remboursé en sus ; sinon intra-GHS. Quand une liste ne vaut qu’à partir d’une date ou jusqu’à une date, la part remboursée est estimée au prorata de la durée couverte sur la période analysée (consommation supposée régulière, les extractions n’étant pas datées).'}),
+      el('li', {}, 'Listes prises en compte : ', E.listesSus(d).map((l, i) => [i ? ' ; ' : '', el('b', {text: l.nom}), ` (${l.type}, ${(l.codes || []).length} produits, ${E.validiteTexte(l)})`])),
       el('li', {text: 'Mise à jour : ' + new Date(d.genere).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'}) + '.'}))));
   };
 })();

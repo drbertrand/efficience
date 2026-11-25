@@ -7,7 +7,7 @@
 <title>Le pharmacien clinicien au service de l’efficience</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611211830">
+<link rel="stylesheet" href="assets/style.css?v=202611251600">
 </head>
 <body>
 <main class="eff-wrap">
@@ -29,9 +29,9 @@
     <div class="eff-grid2" id="services"><p class="eff-small">Chargement…</p></div>
   </section>
 
-  <footer class="eff-foot">Unité de pharmacie clinique · <a href="admin.html">Administration</a></footer>
+  <footer class="eff-foot">Unité de pharmacie clinique · <a href="admin.html">Administration</a> · <a href="referentiels.html">Listes de produits en sus</a></footer>
 </main>
-<script src="assets/core.js?v=202611211830"></script>
+<script src="assets/core.js?v=202611251600"></script>
 <script>
 (async function () {
   const host = document.getElementById('services');
@@ -39,7 +39,7 @@
     const m = await (await fetch('data/manifest.json?t=' + Date.now(), {cache: 'no-store'})).json();
     const list = (m.services || []).slice().sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
     host.replaceChildren(...(list.length ? list.map((s) => EFF.el('a', {class: 'eff-svc', href: 'service.html?s=' + encodeURIComponent(s.id)},
-      EFF.el('b', {text: s.nom}), EFF.el('span', {text: 'Mis à jour le ' + new Date(s.maj).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}))) :
+      EFF.el('b', {text: s.nom}), EFF.el('span', {text: (s.exercice ? 'Année d’analyse ' + s.exercice + ' · ' : '') + 'Mis à jour le ' + new Date(s.maj).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'})}))) :
       [EFF.el('p', {class: 'eff-small', text: 'Aucun tableau de bord publié pour le moment.'})]));
   } catch (e) {
     host.replaceChildren(EFF.el('p', {class: 'eff-small', text: 'Aucun tableau de bord publié pour le moment.'}));

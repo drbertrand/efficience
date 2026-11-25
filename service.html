@@ -7,7 +7,7 @@
 <title>Tableau de bord du service — Pharmacie clinique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611211830">
+<link rel="stylesheet" href="assets/style.css?v=202611251600">
 </head>
 <body>
 <main class="eff-wrap">
@@ -29,11 +29,16 @@
     <details class="eff-step eff-noprint" id="maj">
       <summary><b>Mettre à jour les données du service</b></summary>
       <p class="eff-note">Déposez les extractions « Analyse_conso » des UF du service (un fichier par UF, plusieurs à la fois) et, pour chaque UF ou regroupement, l’état de sa dotation. Une UF déposée remplace ses données précédentes ; les fichiers d’autres services sont refusés. Les fichiers sont lus dans ce navigateur et seules les données chiffrées sont publiées.</p>
-      <div class="eff-row">
-        <label class="eff-field">Exercice<input class="eff-input" type="number" id="p-ex" min="2020" max="2100" style="width:110px"></label>
-        <label class="eff-field">Consommations arrêtées jusqu’à fin<select class="eff-select" id="p-mois"></select></label>
-        <label class="eff-field">Extractions<input type="file" id="files" accept=".xlsx,.xls" multiple></label>
-      </div>
+      <fieldset class="eff-fs">
+        <legend>Extractions de consommation</legend>
+        <div class="eff-row">
+          <label class="eff-field">Année d’analyse<input class="eff-input" type="number" id="p-ex" min="2020" max="2100" style="width:110px"></label>
+          <label class="eff-field">Mois couverts<select class="eff-select" id="p-mois"></select></label>
+          <label class="eff-field">Date de l’extraction<input class="eff-input" type="date" id="p-date"></label>
+        </div>
+        <p class="eff-small" id="p-resume"></p>
+        <label class="eff-field">Fichiers « Analyse_conso » (un par UF, plusieurs à la fois)<input type="file" id="files" accept=".xlsx,.xls" multiple></label>
+      </fieldset>
       <div class="eff-row">
         <label class="eff-field">Dotation de<select class="eff-select" id="dot-reg"></select></label>
         <label class="eff-field">État de la dotation (Code, Rangement, Libellé, Dotation)<input type="file" id="dot-file" accept=".xlsx,.xls"></label>
@@ -55,9 +60,9 @@
     <footer class="eff-foot">Données confidentielles, réservées au service. <a href="./">Accueil</a> · <a href="#" id="print">Imprimer</a></footer>
   </div>
 </main>
-<script src="assets/xlsx.full.min.js?v=202611211830"></script>
-<script src="assets/core.js?v=202611211830"></script>
-<script src="assets/chat.js?v=202611211830"></script>
+<script src="assets/xlsx.full.min.js?v=202611251600"></script>
+<script src="assets/core.js?v=202611251600"></script>
+<script src="assets/chat.js?v=202611251600"></script>
 <script>
 (async function () {
   'use strict';
@@ -69,7 +74,7 @@
   try { manifest = await (await fetch('data/manifest.json?t=' + Date.now(), {cache: 'no-store'})).json(); } catch (e) {}
   const entry = manifest && /^[a-z0-9-]{1,40}$/.test(id) ? (manifest.services || []).find((s) => s.id === id) : null;
   if (!entry) { $('err').textContent = 'Service introuvable. Vérifiez le lien reçu.'; $('go').disabled = true; return; }
-  $('svc-name').textContent = entry.nom; document.title = entry.nom + ' — Pharmacie clinique';
+  $('svc-name').textContent = entry.nom + (entry.exercice ? ` · année d’analyse ${entry.exercice}` : ''); document.title = entry.nom + ' — Pharmacie clinique';
 
   $('lock').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -78,17 +83,20 @@
       const env = await (await fetch('data/' + id + '.enc.json?t=' + Date.now(), {cache: 'no-store'})).json();
       try { PUBLISHED = await EFF.decrypt(env, $('pwd').value); } catch (e) { throw new Error('Mot de passe incorrect.'); }
       PWD = $('pwd').value;
+      const avert = await EFF.loadReferentiels(PUBLISHED);
       D = structuredClone(PUBLISHED);
+      if (avert) $('msgs').replaceChildren(el('div', {class: 'eff-err', text: avert}));
       $('lock').hidden = true; $('app').hidden = false;
       $('maj').open = !D.conso.length;
       render();
     } catch (e) { $('err').textContent = e.message || 'Impossible de charger les données.'; $('go').disabled = false; $('go').textContent = 'Ouvrir'; }
   });
 
-  $('p-mois').append(...EFF.MOIS.map((m, i) => el('option', {value: i + 1, text: m + ' (' + (i + 1) + ' mois)'})));
+  $('p-mois').append(...EFF.MOIS.map((m, i) => el('option', {value: i + 1, text: (i ? 'janvier à ' + m : 'janvier') + ' (' + (i + 1) + ' mois)'})));
   const setDirty = (v) => { dirty = v; $('draft').hidden = !v; };
   $('p-ex').addEventListener('change', () => { D.periode.exercice = +$('p-ex').value; setDirty(true); render(); });
   $('p-mois').addEventListener('change', () => { D.periode.mois = +$('p-mois').value; setDirty(true); render(); });
+  $('p-date').addEventListener('change', () => { D.periode.extraction = $('p-date').value || null; setDirty(true); render(); });
   $('files').addEventListener('change', async (ev) => {
     const files = [...ev.target.files]; if (!files.length) return;
     const results = [];
@@ -97,6 +105,8 @@
       catch (e) { results.push({name: f.name, r: {lignes: [], erreur: 'lecture impossible'}}); }
     }
     const msgs = EFF.ingest(D, results);
+    const ex = D.periode.extraction || null;
+    results.forEach(({r}) => { [...new Set((r.lignes || []).map((l) => l.uf))].forEach((u) => { if (D.fichiers[u]) D.fichiers[u].extraction = ex; }); });
     $('msgs').replaceChildren(...msgs.map((m) => el('div', {class: m.ok ? 'eff-ok' : 'eff-err', text: m.t})));
     ev.target.value = '';
     if (msgs.some((m) => m.ok)) setDirty(true);
@@ -154,7 +164,8 @@
   window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
   function render() {
-    $('p-ex').value = D.periode.exercice; $('p-mois').value = D.periode.mois;
+    $('p-ex').value = D.periode.exercice; $('p-mois').value = D.periode.mois; $('p-date').value = D.periode.extraction || '';
+    $('p-resume').textContent = `Période analysée : janvier à ${EFF.MOIS[D.periode.mois - 1]} ${D.periode.exercice}` + (D.periode.extraction ? `, extraction du ${EFF.dateFr(D.periode.extraction)}.` : ' — indiquez la date de l’extraction.');
     const dr = $('dot-reg'), prevReg = dr.value;
     dr.replaceChildren(...D.regroupements.map((g) => el('option', {value: g.code, text: g.code + ((D.dotations || {})[g.code] ? ' (dotation chargée)' : '')})));
     if (prevReg) dr.value = prevReg;
@@ -164,9 +175,9 @@
     renderPharma();
     const rows = D.regroupements.flatMap((g) => g.ufs.map((u) => ({u, g, f: D.fichiers[u.uf]})));
     $('uf-status').replaceChildren(el('div', {class: 'eff-tw'}, el('table', {class: 'eff-table'},
-      el('thead', {}, el('tr', {}, ['UF', 'Service', 'Regroupement', 'Dernière extraction', 'Déposée le', 'Lignes'].map((h, i) => el('th', {class: i === 5 ? 'n' : null, text: h})))),
+      el('thead', {}, el('tr', {}, ['UF', 'Service', 'Regroupement', 'Dernier fichier', 'Extraction du', 'Déposé le', 'Lignes'].map((h, i) => el('th', {class: i === 6 ? 'n' : null, text: h})))),
       el('tbody', {}, rows.map(({u, g, f}) => el('tr', {class: f ? null : 'muted'}, el('td', {text: u.uf}), el('td', {text: u.nom}), el('td', {text: g.code}),
-        el('td', {text: f ? f.fichier : 'Non transmise'}), el('td', {text: f ? new Date(f.date).toLocaleDateString('fr-FR') : '—'}), el('td', {class: 'n', text: f ? EFF.num(f.lignes) : '—'})))))));
+        el('td', {text: f ? f.fichier : 'Non transmise'}), el('td', {text: f && f.extraction ? new Date(f.extraction + 'T00:00:00Z').toLocaleDateString('fr-FR', {timeZone: 'UTC'}) : '—'}), el('td', {text: f ? new Date(f.date).toLocaleDateString('fr-FR') : '—'}), el('td', {class: 'n', text: f ? EFF.num(f.lignes) : '—'})))))));
   }
 })();
 </script>

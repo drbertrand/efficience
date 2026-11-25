@@ -7,7 +7,7 @@
 <title>Administration — Pharmacien clinicien et efficience</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611211830">
+<link rel="stylesheet" href="assets/style.css?v=202611251600">
 </head>
 <body>
 <main class="eff-wrap">
@@ -31,10 +31,8 @@
     <div class="eff-steps">
       <section class="eff-step">
         <h2>1. Référentiels</h2>
-        <p class="eff-note">Listes de l’exercice (2 colonnes : code, libellé). Elles sont transmises à chaque service à la publication.</p>
+        <p class="eff-note">Les listes de produits remboursés en sus du séjour (hors GHS, LPPR…) sont déposées et datées par les agents administratifs de la pharmacie sur la page <a href="referentiels.html">Listes de produits en sus</a> (mot de passe de l’étape 5). Ici : la correspondance des UF (2 colonnes : code, libellé).</p>
         <div class="eff-grid2">
-          <label class="eff-field">Médicaments hors GHS (.xlsx)<input type="file" accept=".xlsx,.xls,.csv" data-ref="horsGHS"><span class="eff-small" data-ref-info="horsGHS"></span></label>
-          <label class="eff-field">DMS LPPR (.xlsx)<input type="file" accept=".xlsx,.xls,.csv" data-ref="lppr"><span class="eff-small" data-ref-info="lppr"></span></label>
           <label class="eff-field">Correspondance des UF (.xlsx)<input type="file" accept=".xlsx,.xls,.csv" data-ref="uf"><span class="eff-small" data-ref-info="uf"></span></label>
         </div>
       </section>
@@ -64,14 +62,21 @@
       </section>
 
       <section class="eff-step">
-        <h2>5. Publier la configuration</h2>
+        <h2>5. Agents administratifs</h2>
+        <p class="eff-note">Mot de passe de la page <a href="referentiels.html">Listes de produits en sus</a>, où les agents de la pharmacie déposent les listes de produits remboursés en sus du séjour et leurs dates de validité. Il ne donne accès à aucune donnée de consommation.</p>
+        <div class="eff-grid2"><label class="eff-field">Mot de passe agents<input class="eff-input" type="password" id="ag-pwd" autocomplete="off">
+          <span class="eff-row" style="margin-top:4px"><button class="eff-btn ghost" type="button" id="ag-show">Afficher</button><button class="eff-btn ghost" type="button" id="ag-gen">Générer</button></span></label></div>
+      </section>
+
+      <section class="eff-step">
+        <h2>6. Publier la configuration</h2>
         <p class="eff-note">Crée ou met à jour la page de chaque service (nom, UF, référentiels, mot de passe, accès GitHub) sans toucher aux consommations déjà déposées, et enregistre votre configuration chiffrée.</p>
         <div class="eff-row"><button class="eff-btn" type="button" id="publish">Publier la configuration</button><span class="eff-small" id="dirty"></span></div>
         <div id="pub-log" class="eff-small" role="status"></div>
       </section>
 
       <section class="eff-step">
-        <h2>6. Vue d’ensemble</h2>
+        <h2>7. Vue d’ensemble</h2>
         <p class="eff-note">Déchiffre les données publiées de tous les services.</p>
         <div class="eff-row"><button class="eff-btn ghost" type="button" id="load-all">Charger les données publiées</button></div>
         <div id="overview" style="margin-top:12px"></div>
@@ -79,11 +84,11 @@
         <div id="preview" class="eff-steps" style="margin-top:18px"></div>
       </section>
     </div>
-    <footer class="eff-foot"><a href="./">Accueil</a></footer>
+    <footer class="eff-foot"><a href="./">Accueil</a> · <a href="referentiels.html">Listes de produits en sus</a></footer>
   </div>
 </main>
-<script src="assets/xlsx.full.min.js?v=202611211830"></script>
-<script src="assets/core.js?v=202611211830"></script>
+<script src="assets/xlsx.full.min.js?v=202611251600"></script>
+<script src="assets/core.js?v=202611251600"></script>
 <script>
 (function () {
   'use strict';
@@ -97,7 +102,7 @@
     return {repo: owner + '/' + dirs[0], base: dirs.slice(1).map((s) => s + '/').join('')};
   };
   let ADMIN_PWD = null, ENV = null, LOADED = {};
-  let cfg = {version: 2, services: [], ref: {horsGHS: [], lppr: [], uf: []}, github: Object.assign({branch: 'main', token: ''}, guess()), publies: [], pharma: {motDePasse: ''}};
+  let cfg = {version: 2, services: [], ref: {horsGHS: [], lppr: [], uf: []}, github: Object.assign({branch: 'main', token: ''}, guess()), publies: [], pharma: {motDePasse: ''}, agents: {motDePasse: ''}, cleRef: ''};
   const markDirty = () => { $('dirty').textContent = 'Modifications non publiées.'; };
 
   (async () => {
@@ -116,7 +121,7 @@
       if (p !== $('apwd2').value) { $('lock-err').textContent = 'Les deux mots de passe diffèrent.'; return; }
     } else {
       $('unlock').disabled = true; $('unlock').textContent = 'Déchiffrement…';
-      try { const c = await EFF.decrypt(ENV, p); cfg = Object.assign(cfg, c, {github: Object.assign(cfg.github, c.github || {}), pharma: Object.assign(cfg.pharma, c.pharma || {})}); }
+      try { const c = await EFF.decrypt(ENV, p); cfg = Object.assign(cfg, c, {github: Object.assign(cfg.github, c.github || {}), pharma: Object.assign(cfg.pharma, c.pharma || {}), agents: Object.assign(cfg.agents, c.agents || {})}); }
       catch (e) { $('lock-err').textContent = 'Mot de passe incorrect.'; $('unlock').disabled = false; $('unlock').textContent = 'Ouvrir'; return; }
     }
     ADMIN_PWD = p; $('lock').hidden = true; $('admin').hidden = false; init();
@@ -137,6 +142,11 @@
   $('ph-pwd').addEventListener('input', () => { cfg.pharma.motDePasse = $('ph-pwd').value; markDirty(); });
   $('ph-show').addEventListener('click', (e) => { const i = $('ph-pwd'); i.type = i.type === 'password' ? 'text' : 'password'; e.target.textContent = i.type === 'password' ? 'Afficher' : 'Masquer'; });
   $('ph-gen').addEventListener('click', () => { if (cfg.pharma.motDePasse && !confirm('Remplacer le mot de passe pharmacien ? L’ancien ne fonctionnera plus après publication.')) return; cfg.pharma.motDePasse = $('ph-pwd').value = EFF.genPassword(); markDirty(); });
+
+  /* Agents administratifs */
+  $('ag-pwd').addEventListener('input', () => { cfg.agents.motDePasse = $('ag-pwd').value; markDirty(); });
+  $('ag-show').addEventListener('click', (e) => { const i = $('ag-pwd'); i.type = i.type === 'password' ? 'text' : 'password'; e.target.textContent = i.type === 'password' ? 'Afficher' : 'Masquer'; });
+  $('ag-gen').addEventListener('click', () => { if (cfg.agents.motDePasse && !confirm('Remplacer le mot de passe des agents ? L’ancien ne fonctionnera plus après publication.')) return; cfg.agents.motDePasse = $('ag-pwd').value = EFF.genPassword(); markDirty(); });
 
   /* Services */
   function renderServices() {
@@ -184,10 +194,20 @@
     if (!g.repo || !g.token) { log('Renseignez le dépôt et le jeton GitHub (étape 2).', 'eff-err'); return; }
     const bad = cfg.services.filter((s) => !s.motDePasse || s.motDePasse.length < 10 || !EFF.parseRegroupements(s.regroupements).length);
     if (!cfg.pharma.motDePasse || cfg.pharma.motDePasse.length < 10) { log('Choisissez un mot de passe pharmacien de 10 caractères au moins (étape 4).', 'eff-err'); return; }
+    if (!cfg.agents.motDePasse || cfg.agents.motDePasse.length < 10) { log('Choisissez un mot de passe agents de 10 caractères au moins (étape 5).', 'eff-err'); return; }
     if (bad.length) { log('À compléter (mot de passe de 10 caractères au moins et au moins un regroupement) : ' + bad.map((s) => s.nom).join(', '), 'eff-err'); return; }
     $('publish').disabled = true;
     const gh = EFF.github(g);
     try {
+      if (!cfg.cleRef) cfg.cleRef = EFF.genKey();
+      if (!(await gh.get('data/referentiels.enc.json'))) {
+        const listes = [['Médicaments hors GHS', 'Hors GHS', cfg.ref.horsGHS], ['DMS LPPR', 'LPPR', cfg.ref.lppr]].filter(([, , c]) => (c || []).length)
+          .map(([nom, type, codes]) => ({id: EFF.genKey().slice(0, 10), nom, type, du: null, au: null, active: true, fichier: 'reprise de la configuration', depose: new Date().toISOString(), codes}));
+        log('Listes de produits en sus : création à partir des listes de la configuration…');
+        await gh.put('data/referentiels.enc.json', JSON.stringify(await EFF.encrypt({listes, maj: new Date().toISOString()}, cfg.cleRef)), 'Efficience : listes de produits en sus');
+      }
+      log('Accès des agents administratifs…');
+      await gh.put('data/agents.enc.json', JSON.stringify(await EFF.encrypt({cleRef: cfg.cleRef, github: {repo: g.repo, branch: g.branch || 'main', base: g.base || '', token: g.token}}, cfg.agents.motDePasse)), 'Efficience : accès des agents');
       for (const s of cfg.services) {
         log(`${s.nom} : lecture des données publiées…`);
         let prev = null;
@@ -197,7 +217,7 @@
           for (const p of [s.motDePassePublie, s.motDePasse].filter(Boolean)) { try { prev = await EFF.decrypt(env, p); break; } catch (e) {} }
           if (!prev) { log(`${s.nom} : impossible de déchiffrer les données existantes avec le mot de passe connu ; service ignoré pour ne pas les écraser.`, 'eff-err'); continue; }
         }
-        const d = EFF.buildService(s, cfg.ref, {repo: g.repo, branch: g.branch || 'main', base: g.base || '', token: g.token}, prev);
+        const d = EFF.buildService(s, cfg.ref, {repo: g.repo, branch: g.branch || 'main', base: g.base || '', token: g.token}, prev, cfg.cleRef);
         await EFF.publishService(d, s.motDePasse);
         s.motDePassePublie = s.motDePasse;
         if (!cfg.publies.includes(s.id)) cfg.publies.push(s.id);
@@ -232,6 +252,7 @@
       try {
         const env = await (await fetch(`data/${s.id}.enc.json?t=` + Date.now(), {cache: 'no-store'})).json();
         LOADED[s.id] = await EFF.decrypt(env, s.motDePassePublie || s.motDePasse);
+        await EFF.loadReferentiels(LOADED[s.id]);
       } catch (e) { out.push(s.nom); }
     }
     const rows = Object.values(LOADED).map((d) => ({d, c: EFF.compute(d)}));
@@ -250,7 +271,7 @@
   });
 
   function init() {
-    $('gh-repo').value = cfg.github.repo || ''; $('gh-branch').value = cfg.github.branch || 'main'; $('gh-token').value = cfg.github.token || ''; $('ph-pwd').value = cfg.pharma.motDePasse || '';
+    $('gh-repo').value = cfg.github.repo || ''; $('gh-branch').value = cfg.github.branch || 'main'; $('gh-token').value = cfg.github.token || ''; $('ph-pwd').value = cfg.pharma.motDePasse || ''; $('ag-pwd').value = cfg.agents.motDePasse || '';
     showRef(); renderServices();
   }
   window.addEventListener('beforeunload', (e) => { if ($('dirty').textContent) { e.preventDefault(); e.returnValue = ''; } });
