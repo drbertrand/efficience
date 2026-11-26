@@ -216,7 +216,8 @@
      Les agents déposent chaque mois, pour chaque mécanisme de remboursement (texte libre), la liste des produits concernés
      (referentiels.html, chiffrée dans data/referentiels.enc.json avec la clé partagée d.cleRef). Un relevé vaut pour son mois
      et les suivants jusqu'au relevé suivant du même mécanisme ; avant le premier relevé, le mécanisme ne s'applique pas.
-     Les extractions n'étant pas mensuelles, la part remboursée d'un produit est estimée au prorata des mois couverts. */
+     Les extractions n'étant pas mensuelles et la consommation étant extrapolée sur 12 mois, la part remboursée d'un produit
+     est estimée au prorata des mois de l'année couverts, y compris les mois extrapolés après la fin de l'extraction. */
   E.dateFr = (s) => (s ? new Date(s + 'T00:00:00Z').toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : '');
   const ym = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
   E.moisTexte = (s) => { const [y, m] = String(s).split('-').map(Number); return `${E.MOIS[m - 1]} ${y}`; };
@@ -248,9 +249,10 @@
     const ab = (k) => E.MOIS[k].slice(0, 4).replace(/\.$/, '') + (E.MOIS[k].length > 4 ? '.' : '');
     return runs.map(([i, j]) => (i === j ? E.MOIS[i] : `${ab(i)}–${ab(j)}`)).join(', ') + ' ' + ex;
   };
-  /* Pour chaque code : mois analysés couverts, part de la période (0 à 1) et mécanisme retenu (le plus fréquent). */
+  /* Pour chaque code : mois de l'année couverts (les 12 mois, puisque la consommation est extrapolée à l'année : les mois après
+     l'extraction suivent le dernier relevé connu), part de l'année (0 à 1) et mécanisme retenu (le plus fréquent). */
   E.couvertureSus = (d) => {
-    const p = d.periode, ex = +p.exercice, M = Array.from({length: +p.mois}, (_, i) => ym(ex, i + 1)), par = new Map();
+    const p = d.periode, ex = +p.exercice, M = Array.from({length: 12}, (_, i) => ym(ex, i + 1)), par = new Map();
     for (const r of E.relevesSus(d)) { const k = r.mecanisme || 'Liste en sus'; (par.get(k) || par.set(k, []).get(k)).push(r); }
     const out = new Map();
     par.forEach((rs, mec) => {
@@ -886,7 +888,7 @@
       el('li', {text: 'Source : extractions « Analyse_conso » du logiciel de gestion, une par UF, valorisées au PMP de la dernière balance définitive ; les retours sont déduits.'}),
       el('li', {text: `Annualisation : montant de la période × 12 / ${p.mois}.`}),
       el('li', {text: 'Familles selon le compte de stock : solutés = poches et flacons de perfusion du compte H942110 (hors nutrition parentérale) ; autres produits des comptes H9421… = médicaments (ampoules d’électrolytes et nutrition parentérale comprises) ; H9422… = DMS.'}),
-      el('li', {text: 'Mécanisme de remboursement : produit figurant dans un relevé mensuel des produits remboursés en sus du séjour (référentiels administratifs) = remboursé selon ce mécanisme pour ce mois ; sinon intra-GHS. Un relevé vaut jusqu’au relevé suivant du même mécanisme. Les extractions n’étant pas mensuelles, un produit remboursé en sus une partie de la période seulement est dédoublé : part intra-GHS et part en sus au prorata des mois (consommation supposée régulière).'}),
+      el('li', {text: 'Mécanisme de remboursement : produit figurant dans un relevé mensuel des produits remboursés en sus du séjour (référentiels administratifs) = remboursé selon ce mécanisme pour ce mois ; sinon intra-GHS. Un relevé vaut jusqu’au relevé suivant du même mécanisme. Les extractions n’étant pas mensuelles et la consommation étant extrapolée sur 12 mois, un produit remboursé en sus une partie de l’année seulement est dédoublé : part intra-GHS et part en sus au prorata des mois de l’année, y compris les mois extrapolés après la fin de l’extraction, qui suivent le dernier relevé connu (consommation supposée régulière).'}),
       el('li', {}, 'Mécanismes pris en compte : ', (() => { const by = new Map(); E.relevesSus(d).forEach((r) => { const k = r.mecanisme; const x = by.get(k) || []; x.push(r); by.set(k, x); });
         return [...by.entries()].map(([k, rs], i) => { rs.sort((a, b) => (a.mois < b.mois ? -1 : 1)); const der = rs[rs.length - 1];
           return [i ? ' ; ' : '', el('b', {text: k}), ` (${rs.length} relevé${rs.length > 1 ? 's' : ''}${rs.length > 1 ? `, de ${E.moisTexte(rs[0].mois)} à ${E.moisTexte(der.mois)}` : `, ${E.moisTexte(der.mois)}`}, ${(der.codes || []).length} produits au dernier)`]; }); })()),
