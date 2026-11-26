@@ -212,43 +212,67 @@
   E.alerteCouv = (r) => (r.couv == null || r.dot == null || r.qAn <= 0 ? null : (r.couv > r.jMax ? 'sur' : (r.couv < r.jMin ? 'sous' : null)));
   E.STATUTS = ['À augmenter', 'À réduire', 'Sans consommation', 'Hors dotation', 'Adaptée'];
 
-  /* ---------- Listes de produits remboursés en sus du séjour ----------
-     Déposées par les agents administratifs (referentiels.html), chiffrées dans data/referentiels.enc.json avec une clé
-     partagée (d.cleRef) que chaque service reçoit dans ses données. Chaque liste a un type (Hors GHS, LPPR…) et une
-     validité : toute la période analysée, ou à partir du / jusqu'au / entre deux dates. Les extractions ne sont pas datées :
-     la part remboursée d'un produit est estimée au prorata de la durée couverte sur la période (consommation supposée régulière). */
-  const DAY = 86400000;
-  const isoDay = (s) => (s ? Date.parse(s + 'T00:00:00Z') : NaN);
-  E.bornesPeriode = (p) => ({du: Date.UTC(+p.exercice, 0, 1), au: Date.UTC(+p.exercice, +p.mois, 1)});
-  E.validiteTexte = (l) => (l.du && l.au ? `du ${E.dateFr(l.du)} au ${E.dateFr(l.au)}` : l.du ? `à partir du ${E.dateFr(l.du)}` : l.au ? `jusqu’au ${E.dateFr(l.au)}` : 'toute l’année d’analyse');
+  /* ---------- Produits remboursés en sus du séjour ----------
+     Les agents déposent chaque mois, pour chaque mécanisme de remboursement (texte libre), la liste des produits concernés
+     (referentiels.html, chiffrée dans data/referentiels.enc.json avec la clé partagée d.cleRef). Un relevé vaut pour son mois
+     et les suivants jusqu'au relevé suivant du même mécanisme ; avant le premier relevé, le mécanisme ne s'applique pas.
+     Les extractions n'étant pas mensuelles, la part remboursée d'un produit est estimée au prorata des mois couverts. */
   E.dateFr = (s) => (s ? new Date(s + 'T00:00:00Z').toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'}) : '');
-  E.listesSus = (d) => {
-    if (d._ref && Array.isArray(d._ref.listes)) return d._ref.listes.filter((l) => l.active !== false);
-    const r = d.ref || {};
-    return [{nom: 'Médicaments hors GHS', type: 'Hors GHS', codes: (r.horsGHS || []).map((c) => (typeof c === 'object' ? c.code : c))},
-      {nom: 'DMS LPPR', type: 'LPPR', codes: (r.lppr || []).map((c) => (typeof c === 'object' ? c.code : c))}];
-  };
-  /* Pour chaque code : part de la période couverte (0 à 1) et financement retenu = nom de la liste (celle qui couvre la plus longue durée si plusieurs). */
-  E.couvertureSus = (d) => {
-    const B = E.bornesPeriode(d.periode), span = B.au - B.du, per = new Map();
-    for (const l of E.listesSus(d)) {
-      const a = Math.max(B.du, Number.isFinite(isoDay(l.du)) ? isoDay(l.du) : B.du);
-      const b = Math.min(B.au, Number.isFinite(isoDay(l.au)) ? isoDay(l.au) + DAY : B.au);
-      if (b <= a) continue;
-      for (const c of l.codes || []) {
-        const code = typeof c === 'object' ? c.code : c;
-        const x = per.get(code) || {iv: [], types: new Map()};
-        const nom = l.nom || l.type || 'Liste en sus'; x.iv.push([a, b]); x.types.set(nom, (x.types.get(nom) || 0) + (b - a)); per.set(code, x);
-      }
+  const ym = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+  E.moisTexte = (s) => { const [y, m] = String(s).split('-').map(Number); return `${E.MOIS[m - 1]} ${y}`; };
+  E.relevesSus = (d) => {
+    const R = d._ref || {};
+    if (Array.isArray(R.releves)) return R.releves;
+    const ex = +((d.periode || {}).exercice) || new Date().getFullYear(), out = [];
+    const listes = Array.isArray(R.listes) ? R.listes.filter((l) => l.active !== false)
+      : [{nom: 'Médicaments hors GHS', codes: ((d.ref || {}).horsGHS || [])}, {nom: 'DMS LPPR', codes: ((d.ref || {}).lppr || [])}];
+    for (const l of listes) {
+      const codes = (l.codes || []).map((c) => (typeof c === 'object' ? c : {code: c, libelle: ''}));
+      out.push({mecanisme: l.nom || l.type || 'Liste en sus', mois: l.du ? l.du.slice(0, 7) : ym(ex, 1), codes});
+      if (l.au) { const [y, m] = l.au.slice(0, 7).split('-').map(Number); out.push({mecanisme: l.nom || l.type, mois: m === 12 ? ym(y + 1, 1) : ym(y, m + 1), codes: []}); }
     }
+    return out;
+  };
+  /* Texte d'une période à partir des mois couverts (tableau de booléens sur les mois analysés). */
+  E.periodeTexte = (cov, ex) => {
+    const n = cov.length, runs = [];
+    for (let i = 0; i < n; i++) if (cov[i] && (i === 0 || !cov[i - 1])) { let j = i; while (j + 1 < n && cov[j + 1]) j++; runs.push([i, j]); }
+    if (!runs.length) return null;
+    if (runs.length === 1) {
+      const [i, j] = runs[0];
+      if (i === 0 && j === n - 1) return `année ${ex}`;
+      if (i === j) return `${E.MOIS[i]} ${ex}`;
+      if (i === 0) return `jusqu’à fin ${E.MOIS[j]} ${ex}`;
+      if (j === n - 1) return `à partir de ${E.MOIS[i]} ${ex}`;
+    }
+    const ab = (k) => E.MOIS[k].slice(0, 4).replace(/\.$/, '') + (E.MOIS[k].length > 4 ? '.' : '');
+    return runs.map(([i, j]) => (i === j ? E.MOIS[i] : `${ab(i)}–${ab(j)}`)).join(', ') + ' ' + ex;
+  };
+  /* Pour chaque code : mois analysés couverts, part de la période (0 à 1) et mécanisme retenu (le plus fréquent). */
+  E.couvertureSus = (d) => {
+    const p = d.periode, ex = +p.exercice, M = Array.from({length: +p.mois}, (_, i) => ym(ex, i + 1)), par = new Map();
+    for (const r of E.relevesSus(d)) { const k = r.mecanisme || 'Liste en sus'; (par.get(k) || par.set(k, []).get(k)).push(r); }
     const out = new Map();
-    per.forEach((x, code) => {
-      x.iv.sort((m, n) => m[0] - n[0]);
-      let tot = 0, cur = null;
-      for (const [a, b] of x.iv) { if (!cur || a > cur[1]) { if (cur) tot += cur[1] - cur[0]; cur = [a, b]; } else cur[1] = Math.max(cur[1], b); }
-      if (cur) tot += cur[1] - cur[0];
-      const type = [...x.types.entries()].sort((m, n) => n[1] - m[1])[0][0];
-      out.set(code, {f: span > 0 ? Math.min(1, tot / span) : 0, type});
+    par.forEach((rs, mec) => {
+      rs.sort((x, y) => (x.mois < y.mois ? -1 : 1));
+      M.forEach((m, i) => {
+        let cur = null; for (const r of rs) { if (r.mois <= m) cur = r; else break; }
+        if (!cur) return;
+        for (const c of cur.codes || []) {
+          const code = typeof c === 'object' ? c.code : c;
+          const x = out.get(code) || {cov: M.map(() => null)};
+          if (!x.cov[i]) x.cov[i] = mec;
+          out.set(code, x);
+        }
+      });
+    });
+    out.forEach((x) => {
+      const n = x.cov.filter(Boolean).length, cnt = {};
+      x.cov.forEach((m) => { if (m) cnt[m] = (cnt[m] || 0) + 1; });
+      x.f = M.length ? n / M.length : 0;
+      x.type = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0][0];
+      x.periodeSus = E.periodeTexte(x.cov.map(Boolean), ex);
+      x.periodeIntra = E.periodeTexte(x.cov.map((m) => !m), ex);
     });
     return out;
   };
@@ -278,9 +302,10 @@
       const base = {...l, famille: E.famille(l.compte, l.lieu, l.libelle)};
       if (base.famille === 'Médicaments') base.sous = E.sousMed(l.lieu, null, l.libelle);
       const k = cov.get(l.code);
-      if (!k || k.f <= 0) out.push({...base, fin: 'Intra-GHS'});
-      else if (k.f >= 0.9999) out.push({...base, fin: k.type});
-      else out.push({...base, q: l.q * k.f, v: l.v * k.f, fin: k.type, partiel: k.f}, {...base, q: l.q * (1 - k.f), v: l.v * (1 - k.f), fin: 'Intra-GHS', partiel: k.f});
+      if (!k || k.f <= 0) out.push({...base, fin: 'Intra-GHS', periode: null});
+      else if (k.f >= 0.9999) out.push({...base, fin: k.type, periode: k.periodeSus});
+      else out.push({...base, q: l.q * k.f, v: l.v * k.f, fin: k.type, periode: k.periodeSus, partiel: k.f},
+        {...base, q: l.q * (1 - k.f), v: l.v * (1 - k.f), fin: 'Intra-GHS', periode: k.periodeIntra, partiel: k.f});
     }
     return out;
   };
@@ -389,21 +414,26 @@
           classe: prev / t < 0.8 ? 'A' : (prev / t < 0.95 ? 'B' : 'C')};
       });
     };
-    /* Références d'un regroupement par coût décroissant : famille ('*' = toutes), avec ou sans les produits remboursés en sus. */
+    /* Références d'un regroupement par coût décroissant : famille ('*' = toutes), avec ou sans les produits remboursés en sus ;
+       un produit remboursé en sus une partie de la période donne deux lignes consécutives (part intra-GHS, puis part en sus). */
     const produits = (code, fam, avecSus) => {
       const g = regs.find((x) => x.code === code);
       const rows = L.filter((l) => g.ufs.some((u) => u.uf === l.uf) && E.matchType(l, fam) && (avecSus || isIntra(l)));
       const m = new Map();
       for (const l of rows) {
-        const p = m.get(l.code) || {code: l.code, libelle: l.libelle, famille: l.famille, sous: l.sous, fin: l.fin, q: 0, v: 0, ufs: new Set(), partiel: null};
-        p.q += l.q; p.v += l.v; p.ufs.add(l.uf); if (l.fin !== 'Intra-GHS') p.fin = l.fin; if (l.partiel) p.partiel = l.partiel; m.set(l.code, p);
+        const key = l.code + '|' + (l.fin === 'Intra-GHS' ? 'i' : 's');
+        const p = m.get(key) || {code: l.code, libelle: l.libelle, famille: l.famille, sous: l.sous, fin: l.fin, periode: l.periode, partiel: l.partiel || null, q: 0, v: 0, ufs: new Set()};
+        p.q += l.q; p.v += l.v; p.ufs.add(l.uf); m.set(key, p);
       }
-      const prods = [...m.values()].filter((p) => p.v !== 0 || p.q !== 0).sort((a, b) => b.v - a.v || b.q - a.q);
+      const prods = [...m.values()].filter((p) => p.v !== 0 || p.q !== 0);
+      const grp = new Map(); prods.forEach((p) => grp.set(p.code, (grp.get(p.code) || 0) + p.v));
+      prods.sort((a, b) => grp.get(b.code) - grp.get(a.code) || a.code - b.code || (a.fin === 'Intra-GHS' ? -1 : 1));
       const t = sum(prods, (p) => p.v);
       let cum = 0;
       return prods.map((p, i) => {
         cum += p.v;
-        return {rang: i + 1, code: p.code, libelle: p.libelle, famille: p.famille, sous: p.sous, fin: p.partiel && avecSus ? `${p.fin} (${Math.round(p.partiel * 100)} % de la période)` : p.fin, ufs: [...p.ufs].sort().join(', '),
+        const suite = i > 0 && prods[i - 1].code === p.code;
+        return {rang: i + 1, code: p.code, libelle: p.libelle, famille: p.famille, sous: p.sous, fin: p.fin, periode: p.periode, partiel: p.partiel, suite, ufs: [...p.ufs].sort().join(', '),
           q: Math.round(p.q * F), v: Math.round(p.v * F), vr: p.v * F, cumul: t ? Math.round(cum / t * 1000) / 10 : null};
       });
     };
@@ -493,7 +523,7 @@
         ? el('th', {class: c.n ? 'n' : null, 'aria-sort': c.sorted === 'asc' ? 'ascending' : c.sorted === 'desc' ? 'descending' : 'none'},
           el('button', {type: 'button', class: 'eff-sort' + (c.sorted ? ' on' : ''), title: c.sortTitle || 'Trier', onclick: c.onSort}, c.label, el('span', {class: 'eff-sort-i', 'aria-hidden': 'true', text: c.sorted === 'asc' ? ' ▲' : c.sorted === 'desc' ? ' ▼' : ' ⇅'})))
         : el('th', {class: c.n ? 'n' : null, text: c.label}))))),
-      el('tbody', {}, rows.map((r) => el('tr', {class: r._muted ? 'muted' : null}, cols.map((c) => c.render ? el('td', {class: c.n ? 'n' : null, 'data-k': c.key}, c.render(r)) : el('td', {class: c.n ? 'n' : null, 'data-k': c.key, text: c.fmt ? c.fmt(r[c.key], r) : (r[c.key] == null ? '—' : r[c.key])}))))));
+      el('tbody', {}, rows.map((r) => el('tr', {class: [r._muted ? 'muted' : null, r._cls || null].filter(Boolean).join(' ') || null}, cols.map((c) => c.render ? el('td', {class: c.n ? 'n' : null, 'data-k': c.key}, c.render(r)) : el('td', {class: c.n ? 'n' : null, 'data-k': c.key, text: c.fmt ? c.fmt(r[c.key], r) : (r[c.key] == null ? '—' : r[c.key])}))))));
     if (total) t.append(el('tfoot', {}, el('tr', {}, cols.map((c) => el('td', {class: c.n ? 'n' : null, text: total[c.key] == null ? '' : total[c.key]})))));
     return el('div', {class: 'eff-tw'}, t);
   };
@@ -601,13 +631,13 @@
         const tot = Math.round(sum(rows, (r) => r.vr));
         info.textContent = rows.length ? `${rows.length} références · ${E.eur(tot)} par an` : '';
         host.replaceChildren(rows.length ? table([
-          {key: 'rang', label: 'Rang', n: 1}, {key: 'libelle', label: 'Référence'}, {key: 'code', label: 'Code'},
-          selF.value === '*' || selF.value === 'Médicaments' ? {key: 'famille', label: 'Type', fmt: (v, r) => v} : null,
-          chk.checked ? {key: 'fin', label: 'Financement', fmt: (v) => v} : null,
+          {key: 'rang', label: 'Rang', n: 1}, {key: 'libelle', label: 'Référence', fmt: (v, r) => (r.suite ? '↳ ' : '') + v}, {key: 'code', label: 'Code'},
+          selF.value === '*' || selF.value === 'Médicaments' ? {key: 'famille', label: 'Type'} : null,
+          {key: 'fin', label: 'Mécanisme de remboursement'}, {key: 'periode', label: 'Période concernée', fmt: (v, r) => (r.fin === 'Intra-GHS' && !r.partiel ? '—' : v || '—')},
           g.ufs.length > 1 ? {key: 'ufs', label: 'UF'} : null,
           {key: 'q', label: 'Quantité / an', n: 1, fmt: E.num}, {key: 'v', label: 'Coût / an', n: 1, fmt: E.eur},
           {key: 'pGlob', label: '% du total', n: 1, fmt: (v) => (v != null && v < 0.1 && v > 0 ? '<\u00a00,1\u00a0%' : E.pct(v))}, {key: 'cumul', label: '% cumulé', n: 1, fmt: E.pct}
-        ].filter(Boolean), (all ? rows : rows.slice(0, N)).map((r) => ({...r, pGlob: tot ? Math.round(r.vr / tot * 1000) / 10 : null, _muted: r.fin !== 'Intra-GHS'}))) : el('p', {class: 'eff-small', text: 'Aucune référence pour ce choix.'}));
+        ].filter(Boolean), (all ? rows : rows.slice(0, N)).map((r) => ({...r, pGlob: tot ? Math.round(r.vr / tot * 1000) / 10 : null, _cls: [r.fin !== 'Intra-GHS' ? 'eff-sus' : null, r.suite ? 'eff-suite' : null].filter(Boolean).join(' ')}))) : el('p', {class: 'eff-small', text: 'Aucune référence pour ce choix.'}));
         more.hidden = rows.length <= N;
         more.textContent = all ? 'Afficher les 25 premières seulement' : `Afficher les ${rows.length} références`;
         fold.hidden = !(all && rows.length > N);
@@ -856,8 +886,10 @@
       el('li', {text: 'Source : extractions « Analyse_conso » du logiciel de gestion, une par UF, valorisées au PMP de la dernière balance définitive ; les retours sont déduits.'}),
       el('li', {text: `Annualisation : montant de la période × 12 / ${p.mois}.`}),
       el('li', {text: 'Familles selon le compte de stock : solutés = poches et flacons de perfusion du compte H942110 (hors nutrition parentérale) ; autres produits des comptes H9421… = médicaments (ampoules d’électrolytes et nutrition parentérale comprises) ; H9422… = DMS.'}),
-      el('li', {text: 'Financement : produit figurant sur une liste de produits remboursés en sus du séjour (hors GHS, LPPR…) = remboursé en sus ; sinon intra-GHS. Quand une liste ne vaut qu’à partir d’une date ou jusqu’à une date, la part remboursée est estimée au prorata de la durée couverte sur la période analysée (consommation supposée régulière, les extractions n’étant pas datées).'}),
-      el('li', {}, 'Listes prises en compte : ', E.listesSus(d).map((l, i) => [i ? ' ; ' : '', el('b', {text: l.nom}), ` (${l.type}, ${(l.codes || []).length} produits, ${E.validiteTexte(l)})`])),
+      el('li', {text: 'Mécanisme de remboursement : produit figurant dans un relevé mensuel des produits remboursés en sus du séjour (référentiels administratifs) = remboursé selon ce mécanisme pour ce mois ; sinon intra-GHS. Un relevé vaut jusqu’au relevé suivant du même mécanisme. Les extractions n’étant pas mensuelles, un produit remboursé en sus une partie de la période seulement est dédoublé : part intra-GHS et part en sus au prorata des mois (consommation supposée régulière).'}),
+      el('li', {}, 'Mécanismes pris en compte : ', (() => { const by = new Map(); E.relevesSus(d).forEach((r) => { const k = r.mecanisme; const x = by.get(k) || []; x.push(r); by.set(k, x); });
+        return [...by.entries()].map(([k, rs], i) => { rs.sort((a, b) => (a.mois < b.mois ? -1 : 1)); const der = rs[rs.length - 1];
+          return [i ? ' ; ' : '', el('b', {text: k}), ` (${rs.length} relevé${rs.length > 1 ? 's' : ''}${rs.length > 1 ? `, de ${E.moisTexte(rs[0].mois)} à ${E.moisTexte(der.mois)}` : `, ${E.moisTexte(der.mois)}`}, ${(der.codes || []).length} produits au dernier)`]; }); })()),
       el('li', {text: 'Mise à jour : ' + new Date(d.genere).toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'}) + '.'}))));
   };
 })();

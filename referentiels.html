@@ -7,20 +7,23 @@
 <title>Référentiels administratifs — Pharmacie clinique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611252000">
+<link rel="stylesheet" href="assets/style.css?v=202611260830">
 <style>
-  .ref-form { display: grid; gap: 14px; }
-  .ref-val { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
-  .ref-val label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  .ref-dates { display: flex; flex-wrap: wrap; gap: 12px; }
-  .ref-dates[hidden] { display: none; }
+  .dep { display: grid; grid-template-columns: 160px minmax(220px, 1.4fr) minmax(200px, 1.2fr) auto; gap: 10px; align-items: end; }
+  @media (max-width: 860px) { .dep { grid-template-columns: 1fr; } }
+  .dep-prev { font-size: .88rem; margin-top: 8px; }
+  .mec { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
+  .mec-h { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; margin-bottom: 8px; }
+  .mec-h h3 { margin: 0; }
   .ref-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  .ref-actions .eff-btn { padding: 4px 10px; font-size: .82rem; }
-  .ref-off td { opacity: .5; }
-  .ref-edit td { background: var(--accent-soft); }
+  .ref-actions .eff-btn, .mec-h .eff-btn { padding: 4px 10px; font-size: .82rem; }
+  .in { color: #0f6e56; font-weight: 600; } .out { color: var(--bad); font-weight: 600; }
+  .det td { background: var(--accent-soft); }
+  .det-g { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .det-g { grid-template-columns: 1fr; } }
+  .det-g ul { margin: 4px 0 0; padding-left: 18px; max-height: 220px; overflow: auto; font-size: .85rem; }
   .ref-bar { position: sticky; bottom: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
   .ref-bar[hidden] { display: none; }
-  .ref-preview { font-size: .85rem; color: var(--muted); }
   .ref-scroll { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; }
   .ref-scroll table { margin: 0; border: 0; }
   .ref-scroll thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; box-shadow: 0 1px 0 var(--line); }
@@ -40,20 +43,27 @@
   <div id="app" hidden>
     <header class="eff-head">
       <p class="eff-kicker">Pharmacie clinique · CHG</p>
-      <h1>Listes de produits remboursés en sus <span class="eff-annee" id="annee"></span></h1>
-      <p class="eff-sub">Chaque liste recense des produits remboursés en plus du tarif du séjour (médicaments hors GHS, dispositifs LPPR, accès précoce…). Ils sont exclus du coût à la charge de l’hôpital sur toutes les pages de service, pendant la période de validité indiquée. Le nombre d’unités par boîte s’affiche en regard des dotations, pour que le pharmacien arrondisse s’il le juge pertinent.</p>
+      <h1>Référentiels administratifs <span class="eff-annee" id="annee"></span></h1>
+      <p class="eff-sub">Chaque mois, déposez pour chaque mécanisme de remboursement en sus du séjour (liste en sus, LPPR, accès précoce…) la liste à jour des produits concernés. Les produits entrés et sortis sont déduits de la comparaison avec le mois précédent, et toutes les pages de service en tiennent compte.</p>
     </header>
 
     <div class="eff-steps">
       <section class="eff-step">
-        <h2>Listes de produits remboursés en sus</h2>
-        <div id="listes"></div>
+        <h2>Dépôt mensuel des produits remboursés en sus</h2>
+        <p class="eff-note">Fichier Excel ou CSV : code produit en 1re colonne, libellé en 2e (les lignes sans code numérique, comme les titres, sont ignorées). Un relevé vaut pour son mois et les suivants, jusqu’au relevé suivant du même mécanisme. Pour un mécanisme nouveau, déposez d’abord le mois où il commence.</p>
+        <div class="dep">
+          <label class="eff-field">Mois concerné<input class="eff-input" type="month" id="d-mois"></label>
+          <label class="eff-field">Mécanisme de remboursement en sus<input class="eff-input" id="d-mec" list="mecs" placeholder="ex. Liste en sus — médicaments"><datalist id="mecs"></datalist></label>
+          <label class="eff-field">Fichier<input type="file" id="d-file" accept=".xlsx,.xls,.csv"></label>
+          <button class="eff-btn" type="button" id="d-add">Ajouter</button>
+        </div>
+        <div class="dep-prev" id="d-prev" role="status"></div>
+        <p class="eff-err" id="d-err" role="alert"></p>
       </section>
 
       <section class="eff-step">
-        <h2>Ajouter une liste de produits en sus</h2>
-        <p class="eff-note">Fichier Excel ou CSV à deux colonnes : code produit, libellé (les lignes sans code numérique, comme les titres, sont ignorées). Plusieurs fichiers peuvent être ajoutés en une fois avec les mêmes réglages.</p>
-        <div class="ref-form" id="add-form"></div>
+        <h2>Mécanismes et évolution mois par mois</h2>
+        <div id="mecanismes"></div>
       </section>
 
       <section class="eff-step">
@@ -86,20 +96,31 @@
     <footer class="eff-foot"><a href="./">Accueil</a></footer>
   </div>
 </main>
-<script src="assets/xlsx.full.min.js?v=202611252000"></script>
-<script src="assets/core.js?v=202611252000"></script>
+<script src="assets/xlsx.full.min.js?v=202611260830"></script>
+<script src="assets/core.js?v=202611260830"></script>
 <script>
 (async function () {
   'use strict';
   const $ = (id) => document.getElementById(id), el = EFF.el;
-  let ACCES = null, LISTES = [], COND = {}, FCOND = [], PUBLIE = '', ANNEE = new Date().getFullYear();
-  const etat = () => JSON.stringify({LISTES, COND, FCOND});
+  let ACCES = null, REL = [], COND = {}, FCOND = [], PUBLIE = '', ANNEE = new Date().getFullYear();
+  const etat = () => JSON.stringify({REL, COND, FCOND});
   try { const m = await (await fetch('data/manifest.json?t=' + Date.now(), {cache: 'no-store'})).json(); const ex = (m.services || []).map((s) => +s.exercice).filter(Boolean); if (ex.length) ANNEE = Math.max(...ex); } catch (e) {}
-
-  const TYPES = [['Hors GHS', 'Médicaments hors GHS (liste en sus)'], ['LPPR', 'Dispositifs médicaux LPPR (en sus)'], ['Accès précoce', 'Accès précoce / accès compassionnel'], ['Autre', 'Autre (à préciser)']];
+  const now = new Date(), moisCourant = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const dirty = () => etat() !== PUBLIE;
-  const refresh = () => { $('bar').hidden = !dirty(); renderListes(); renderCond(); search(); };
-  const nbCodes = (l) => (l.codes || []).length;
+  const refresh = () => { $('bar').hidden = !dirty(); renderMec(); renderCond(); search(); preview(); };
+  const codeSet = (r) => new Set((r.codes || []).map((c) => c.code));
+
+  /* Ancien format (listes avec validité) → relevés mensuels */
+  const depuisListes = (listes) => {
+    const out = [];
+    for (const l of listes || []) {
+      if (l.active === false) continue;
+      const mec = l.nom || l.type || 'Liste en sus', base = {mecanisme: mec, fichier: l.fichier || '', depose: l.depose || new Date().toISOString()};
+      out.push({...base, id: EFF.genKey().slice(0, 10), mois: l.du ? l.du.slice(0, 7) : `${ANNEE}-01`, codes: l.codes || []});
+      if (l.au) { const [y, m] = l.au.slice(0, 7).split('-').map(Number); out.push({...base, id: EFF.genKey().slice(0, 10), mois: m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`, codes: []}); }
+    }
+    return out;
+  };
 
   $('lock').addEventListener('submit', async (ev) => {
     ev.preventDefault(); $('err').textContent = ''; $('go').disabled = true; $('go').textContent = 'Déchiffrement…';
@@ -110,116 +131,94 @@
       let raw = null;
       try { raw = await EFF.github(ACCES.github).raw('data/referentiels.enc.json'); } catch (e) {}
       if (!raw) { const f = await fetch('data/referentiels.enc.json?t=' + Date.now(), {cache: 'no-store'}); if (f.ok) raw = await f.text(); }
-      const data = raw ? await EFF.decrypt(JSON.parse(raw), ACCES.cleRef) : {listes: []};
-      LISTES = data.listes || []; COND = data.conditionnements || {}; FCOND = data.fichiersCond || []; PUBLIE = etat();
-      $('lock').hidden = true; $('app').hidden = false; $('annee').textContent = 'Année d’analyse ' + ANNEE;
-      renderAdd(); refresh();
+      const data = raw ? await EFF.decrypt(JSON.parse(raw), ACCES.cleRef) : {};
+      COND = data.conditionnements || {}; FCOND = data.fichiersCond || [];
+      if (Array.isArray(data.releves)) { REL = data.releves; PUBLIE = etat(); }
+      else { REL = depuisListes(data.listes); PUBLIE = JSON.stringify({REL: [], COND, FCOND}); }
+      $('lock').hidden = true; $('app').hidden = false; $('annee').textContent = 'Année d’analyse ' + ANNEE; $('d-mois').value = moisCourant;
+      refresh();
     } catch (e) {
       $('err').textContent = e.message === 'absent' ? 'Cet espace n’est pas encore configuré (page d’administration).' : (e.message || 'Chargement impossible.');
       $('go').disabled = false; $('go').textContent = 'Ouvrir';
     }
   });
 
-  /* Champs communs : type et validité */
-  const typeField = (init) => {
-    const known = TYPES.some(([v]) => v === init && v !== 'Autre');
-    const sel = el('select', {class: 'eff-input'}, TYPES.map(([v, t]) => el('option', {value: v, text: t})));
-    const autre = el('input', {class: 'eff-input', placeholder: 'Type de liste', style: 'max-width:260px'});
-    sel.value = init ? (known ? init : 'Autre') : 'Hors GHS'; autre.value = init && !known ? init : '';
-    const sync = () => { autre.hidden = sel.value !== 'Autre'; }; sel.addEventListener('change', sync); sync();
-    return {node: el('label', {class: 'eff-field'}, 'Type de liste', el('span', {class: 'eff-row'}, sel, autre)), value: () => (sel.value === 'Autre' ? autre.value.trim() : sel.value)};
+  const mecanismes = () => [...new Set(REL.map((r) => r.mecanisme))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const relevesDe = (mec) => REL.filter((r) => r.mecanisme === mec).sort((a, b) => (a.mois < b.mois ? -1 : 1));
+  const precedent = (mec, mois) => relevesDe(mec).filter((r) => r.mois < mois).pop() || null;
+  const ecarts = (r, prev) => {
+    if (!prev) return null;
+    const a = codeSet(prev), b = codeSet(r);
+    return {entrees: (r.codes || []).filter((c) => !a.has(c.code)), sorties: (prev.codes || []).filter((c) => !b.has(c.code))};
   };
-  let nVal = 0;
-  const validiteField = (l) => {
-    const name = 'val' + (++nVal);
-    const mode0 = l && l.du && l.au ? 'entre' : l && l.du ? 'depuis' : l && l.au ? 'jusqua' : 'annee';
-    const opts = [['annee', 'Toute l’année d’analyse'], ['depuis', 'À partir du…'], ['jusqua', 'Jusqu’au…'], ['entre', 'Entre deux dates']];
-    const radios = opts.map(([v, t]) => { const r = el('input', {type: 'radio', name, value: v}); if (v === mode0) r.checked = true; return {v, r, lab: el('label', {}, r, t)}; });
-    const du = el('input', {class: 'eff-input', type: 'date', value: (l && l.du) || ''}), au = el('input', {class: 'eff-input', type: 'date', value: (l && l.au) || ''});
-    const fDu = el('label', {class: 'eff-field'}, 'À partir du (inclus)', du), fAu = el('label', {class: 'eff-field'}, 'Jusqu’au (inclus)', au);
-    const dates = el('div', {class: 'ref-dates'}, fDu, fAu);
-    const mode = () => radios.find((x) => x.r.checked).v;
-    const sync = () => { const m = mode(); dates.hidden = m === 'annee'; fDu.hidden = !(m === 'depuis' || m === 'entre'); fAu.hidden = !(m === 'jusqua' || m === 'entre'); };
-    radios.forEach((x) => x.r.addEventListener('change', sync)); sync();
-    return {node: el('div', {}, el('div', {class: 'eff-small', text: 'Période de prise en compte', style: 'margin-bottom:6px'}), el('div', {class: 'ref-val'}, radios.map((x) => x.lab)), dates),
-      value: () => {
-        const m = mode(), d1 = m === 'depuis' || m === 'entre' ? du.value : null, d2 = m === 'jusqua' || m === 'entre' ? au.value : null;
-        if ((m === 'depuis' || m === 'entre') && !d1) return {err: 'Indiquez la date de début.'};
-        if ((m === 'jusqua' || m === 'entre') && !d2) return {err: 'Indiquez la date de fin.'};
-        if (d1 && d2 && d2 < d1) return {err: 'La date de fin précède la date de début.'};
-        return {du: d1 || null, au: d2 || null};
-      }};
-  };
-  const lireFichier = async (f) => { try { return EFF.parseList(await EFF.readWorkbook(f)); } catch (e) { return null; } };
-  const horsAnnee = (v) => [v.du, v.au].filter(Boolean).some((x) => +x.slice(0, 4) !== ANNEE);
 
-  /* Ajout */
-  function renderAdd() {
-    const file = el('input', {type: 'file', accept: '.xlsx,.xls,.csv', multiple: ''});
-    const nom = el('input', {class: 'eff-input', placeholder: 'ex. Liste en sus — avenant mars 2026'});
-    const preview = el('div', {class: 'ref-preview'}), msg = el('p', {class: 'eff-err', role: 'alert'});
-    const typ = typeField(), val = validiteField();
-    let lus = [];
-    file.addEventListener('change', async () => {
-      lus = []; msg.textContent = '';
-      for (const f of file.files) lus.push({f, codes: await lireFichier(f)});
-      if (lus.length === 1 && !nom.value) nom.value = lus[0].f.name.replace(/\.[^.]+$/, '');
-      preview.replaceChildren(...lus.map(({f, codes}) => el('div', {text: codes && codes.length ? `${f.name} : ${codes.length} produits lus (ex. ${codes.slice(0, 3).map((c) => c.code + ' ' + c.libelle).join(' ; ')})` : `${f.name} : aucun produit lu (première colonne : code numérique attendu)`})));
-    });
-    const add = el('button', {class: 'eff-btn', type: 'button', text: 'Ajouter à la liste'});
-    add.addEventListener('click', () => {
-      msg.textContent = '';
-      const ok = lus.filter((x) => x.codes && x.codes.length);
-      if (!ok.length) { msg.textContent = 'Choisissez au moins un fichier contenant des produits.'; return; }
-      const type = typ.value(); if (!type) { msg.textContent = 'Précisez le type de liste.'; return; }
-      const v = val.value(); if (v.err) { msg.textContent = v.err; return; }
-      if (horsAnnee(v) && !confirm(`Une date est en dehors de l’année d’analyse ${ANNEE}. Ajouter quand même ?`)) return;
-      ok.forEach(({f, codes}) => LISTES.push({id: EFF.genKey().slice(0, 10), nom: ok.length === 1 && nom.value.trim() ? nom.value.trim() : f.name.replace(/\.[^.]+$/, ''), type, du: v.du, au: v.au, active: true, fichier: f.name, depose: new Date().toISOString(), codes}));
-      renderAdd(); refresh();
-      $('listes').scrollIntoView({behavior: 'smooth', block: 'start'});
-    });
-    $('add-form').replaceChildren(el('label', {class: 'eff-field'}, 'Fichier(s)', file), preview,
-      el('label', {class: 'eff-field'}, 'Nom de la liste (facultatif ; par défaut le nom du fichier)', nom), typ.node, val.node, el('div', {class: 'eff-row'}, add), msg);
+  /* Dépôt */
+  let LU = null;
+  $('d-file').addEventListener('change', async () => {
+    const f = $('d-file').files[0]; LU = null; $('d-err').textContent = '';
+    if (f) { try { const codes = EFF.parseList(await EFF.readWorkbook(f)); LU = {f, codes}; } catch (e) { LU = {f, codes: []}; } }
+    preview();
+  });
+  $('d-mec').addEventListener('input', preview); $('d-mois').addEventListener('change', preview);
+  function preview() {
+    const node = $('d-prev');
+    if (!LU) { node.replaceChildren(); return; }
+    if (!LU.codes.length) { node.replaceChildren(el('span', {class: 'eff-err', text: `${LU.f.name} : aucun produit lu (première colonne : code numérique attendu).`})); return; }
+    const mec = $('d-mec').value.trim(), mois = $('d-mois').value, prev = mec && mois ? precedent(mec, mois) : null;
+    const parts = [el('b', {text: `${LU.codes.length} produits lus`}), ` (ex. ${LU.codes.slice(0, 2).map((c) => c.code + ' ' + c.libelle).join(' ; ')})`];
+    if (mec && mois) {
+      const ex = REL.find((r) => r.mecanisme === mec && r.mois === mois);
+      if (prev) { const e = ecarts({codes: LU.codes}, prev); parts.push(' — par rapport à ' + EFF.moisTexte(prev.mois) + ' : ', el('span', {class: 'in', text: `${e.entrees.length} entrée${e.entrees.length > 1 ? 's' : ''}`}), ', ', el('span', {class: 'out', text: `${e.sorties.length} sortie${e.sorties.length > 1 ? 's' : ''}`}), '.'); }
+      else parts.push(mecanismes().includes(mec) ? ' — aucun relevé antérieur pour ce mécanisme.' : ' — nouveau mécanisme.');
+      if (ex) parts.push(el('div', {class: 'eff-err', text: `Un relevé existe déjà pour ${EFF.moisTexte(mois)} : il sera remplacé.`}));
+    }
+    node.replaceChildren(...parts);
   }
+  $('d-add').addEventListener('click', () => {
+    $('d-err').textContent = '';
+    const mec = $('d-mec').value.trim(), mois = $('d-mois').value;
+    if (!mois) { $('d-err').textContent = 'Indiquez le mois concerné.'; return; }
+    if (!mec) { $('d-err').textContent = 'Indiquez le mécanisme de remboursement.'; return; }
+    if (!LU || !LU.codes.length) { $('d-err').textContent = 'Choisissez un fichier contenant des produits.'; return; }
+    const i = REL.findIndex((r) => r.mecanisme === mec && r.mois === mois);
+    const rel = {id: EFF.genKey().slice(0, 10), mecanisme: mec, mois, fichier: LU.f.name, depose: new Date().toISOString(), codes: LU.codes};
+    if (i >= 0) REL.splice(i, 1, rel); else REL.push(rel);
+    LU = null; $('d-file').value = ''; ouverts.add(rel.id);
+    refresh();
+    const card = document.querySelector(`[data-mec="${CSS.escape(mec)}"]`); if (card) card.scrollIntoView({behavior: 'smooth', block: 'start'});
+  });
 
-  /* Tableau des listes */
-  let enEdition = null;
-  function renderListes() {
-    if (!LISTES.length) { $('listes').replaceChildren(el('p', {class: 'eff-small', text: 'Aucune liste pour le moment : ajoutez-en une ci-dessous.'})); return; }
-    const btn = (t, f, cls) => el('button', {class: 'eff-btn ' + (cls || 'ghost'), type: 'button', text: t, onclick: f});
-    const rows = [];
-    LISTES.forEach((l, i) => {
-      rows.push(el('tr', {class: l.active === false ? 'ref-off' : null},
-        el('td', {}, el('b', {text: l.nom}), l.active === false ? el('div', {class: 'eff-small', text: 'Désactivée : non prise en compte'}) : null),
-        el('td', {text: l.type}), el('td', {text: EFF.validiteTexte(l)}), el('td', {class: 'n', text: EFF.num(nbCodes(l))}),
-        el('td', {class: 'eff-small', text: `${l.fichier || '—'}${l.depose ? ' · ' + new Date(l.depose).toLocaleDateString('fr-FR') : ''}`}),
-        el('td', {}, el('div', {class: 'ref-actions'},
-          btn('Modifier', () => { enEdition = enEdition === l.id ? null : l.id; renderListes(); }),
-          btn(l.active === false ? 'Réactiver' : 'Désactiver', () => { l.active = l.active === false; refresh(); }),
-          btn('Supprimer', () => { if (confirm(`Supprimer la liste « ${l.nom} » (${nbCodes(l)} produits) ? Elle disparaîtra de l’analyse après publication.`)) { LISTES.splice(i, 1); refresh(); } })))));
-      if (enEdition === l.id) {
-        const nom = el('input', {class: 'eff-input', value: l.nom}), typ = typeField(l.type), val = validiteField(l), msg = el('p', {class: 'eff-err', role: 'alert'});
-        const file = el('input', {type: 'file', accept: '.xlsx,.xls,.csv'}); let nouv = null;
-        const info = el('span', {class: 'ref-preview'});
-        file.addEventListener('change', async () => { nouv = file.files[0] ? await lireFichier(file.files[0]) : null; info.textContent = nouv && nouv.length ? `${nouv.length} produits lus` : (file.files[0] ? 'aucun produit lu' : ''); });
-        const ok = btn('Valider', () => {
-          const t = typ.value(); if (!t) { msg.textContent = 'Précisez le type de liste.'; return; }
-          const v = val.value(); if (v.err) { msg.textContent = v.err; return; }
-          if (horsAnnee(v) && !confirm(`Une date est en dehors de l’année d’analyse ${ANNEE}. Valider quand même ?`)) return;
-          l.nom = nom.value.trim() || l.nom; l.type = t; l.du = v.du; l.au = v.au;
-          if (nouv && nouv.length) { l.codes = nouv; l.fichier = file.files[0].name; l.depose = new Date().toISOString(); }
-          enEdition = null; refresh();
-        }, '');
-        rows.push(el('tr', {class: 'ref-edit'}, el('td', {colspan: '6'}, el('div', {class: 'ref-form'},
-          el('label', {class: 'eff-field'}, 'Nom de la liste', nom), typ.node, val.node,
-          el('label', {class: 'eff-field'}, 'Remplacer le fichier (facultatif)', el('span', {class: 'eff-row'}, file, info)),
-          el('div', {class: 'eff-row'}, ok, btn('Fermer', () => { enEdition = null; renderListes(); })), msg))));
-      }
-    });
-    $('listes').replaceChildren(el('div', {class: 'eff-tw'}, el('table', {class: 'eff-table'},
-      el('thead', {}, el('tr', {}, ['Liste', 'Type', 'Prise en compte', 'Produits', 'Fichier, déposé le', ''].map((h, i) => el('th', {class: i === 3 ? 'n' : null, text: h})))),
-      el('tbody', {}, rows))),
-      el('p', {class: 'eff-small', text: 'Les extractions de consommation ne sont pas datées : pour une liste valable seulement une partie de l’année, la part remboursée d’un produit est estimée au prorata de la durée couverte sur la période analysée.'}));
+  /* Mécanismes */
+  const ouverts = new Set();
+  const liste = (titre, items, cls) => el('div', {}, el('b', {class: cls, text: `${titre} (${items.length})`}),
+    items.length ? el('ul', {}, items.map((c) => el('li', {text: `${c.code} ${c.libelle || ''}`}))) : el('p', {class: 'eff-small', text: 'Aucun.'}));
+  function renderMec() {
+    $('mecs').replaceChildren(...mecanismes().map((m) => el('option', {value: m})));
+    if (!REL.length) { $('mecanismes').replaceChildren(el('p', {class: 'eff-small', text: 'Aucun relevé pour le moment.'})); return; }
+    const btn = (t, f) => el('button', {class: 'eff-btn ghost', type: 'button', text: t, onclick: f});
+    $('mecanismes').replaceChildren(...mecanismes().map((mec) => {
+      const rs = relevesDe(mec), der = rs[rs.length - 1], rows = [];
+      [...rs].reverse().forEach((r) => {
+        const e = ecarts(r, precedent(mec, r.mois));
+        rows.push(el('tr', {},
+          el('td', {}, el('b', {text: EFF.moisTexte(r.mois)})), el('td', {class: 'n', text: EFF.num((r.codes || []).length)}),
+          el('td', {class: 'n'}, e ? el('span', {class: e.entrees.length ? 'in' : null, text: (e.entrees.length ? '+' : '') + e.entrees.length}) : '—'),
+          el('td', {class: 'n'}, e ? el('span', {class: e.sorties.length ? 'out' : null, text: (e.sorties.length ? '−' : '') + e.sorties.length}) : '—'),
+          el('td', {class: 'eff-small', text: `${r.fichier || '—'}${r.depose ? ' · ' + new Date(r.depose).toLocaleDateString('fr-FR') : ''}`}),
+          el('td', {}, el('div', {class: 'ref-actions'},
+            btn(ouverts.has(r.id) ? 'Masquer' : 'Détail', () => { if (ouverts.has(r.id)) ouverts.delete(r.id); else ouverts.add(r.id); renderMec(); }),
+            btn('Supprimer', () => { if (confirm(`Supprimer le relevé de ${EFF.moisTexte(r.mois)} (${mec}) ?`)) { REL.splice(REL.indexOf(r), 1); refresh(); } })))));
+        if (ouverts.has(r.id)) rows.push(el('tr', {class: 'det'}, el('td', {colspan: '6'},
+          e ? el('div', {class: 'det-g'}, liste('Entrés au remboursement en sus à partir de ce mois', e.entrees, 'in'), liste('Sortis du remboursement en sus ce mois-ci', e.sorties, 'out'))
+            : el('div', {}, el('p', {class: 'eff-small', text: 'Premier relevé de ce mécanisme : remboursé en sus à partir de ce mois.'}), liste('Produits', r.codes || [], null)))));
+      });
+      return el('div', {class: 'mec', 'data-mec': mec},
+        el('div', {class: 'mec-h'}, el('h3', {text: mec}), el('span', {class: 'eff-small', text: `${rs.length} relevé${rs.length > 1 ? 's' : ''} · dernier : ${EFF.moisTexte(der.mois)} · ${EFF.num((der.codes || []).length)} produits`}),
+          btn('Renommer', () => { const n = (prompt('Nouveau nom du mécanisme (affiché sur les pages de service) :', mec) || '').trim(); if (n && n !== mec) { REL.forEach((r) => { if (r.mecanisme === mec) r.mecanisme = n; }); refresh(); } })),
+        el('div', {class: 'eff-tw'}, el('table', {class: 'eff-table'},
+          el('thead', {}, el('tr', {}, ['Mois', 'Produits', 'Entrées', 'Sorties', 'Fichier, déposé le', ''].map((h, i) => el('th', {class: i >= 1 && i <= 3 ? 'n' : null, text: h})))),
+          el('tbody', {}, rows))));
+    }));
   }
 
   /* Unités par boîte */
@@ -254,24 +253,31 @@
   }
   $('cond-q').addEventListener('input', renderCond);
 
+
   /* Recherche */
   function search() {
     const q = $('q').value.trim().toUpperCase();
     if (q.length < 3) { $('q-res').replaceChildren(); return; }
-    const hits = [];
-    LISTES.forEach((l) => (l.codes || []).forEach((c) => { if (String(c.code) === q || String(c.libelle || '').toUpperCase().includes(q)) hits.push({l, c}); }));
+    const res = [];
+    mecanismes().forEach((mec) => {
+      const rs = relevesDe(mec), pres = rs.filter((r) => (r.codes || []).some((c) => String(c.code) === q || String(c.libelle || '').toUpperCase().includes(q)));
+      if (!pres.length) return;
+      const lib = (pres[pres.length - 1].codes.find((c) => String(c.code) === q || String(c.libelle || '').toUpperCase().includes(q)) || {});
+      const der = rs[rs.length - 1], dansDernier = pres.includes(der);
+      res.push(el('li', {}, el('b', {text: `${lib.code} ${lib.libelle || ''}`}), ` — ${mec} : présent dans ${pres.length} relevé${pres.length > 1 ? 's' : ''} sur ${rs.length} (${pres.map((r) => EFF.moisTexte(r.mois)).join(', ')})${dansDernier ? '' : ', absent du dernier relevé'}`));
+    });
     const cs = Object.entries(COND).filter(([k, v]) => k === q || (v.libelle || '').toUpperCase().includes(q)).slice(0, 10);
     const cNode = cs.length ? el('p', {}, 'Unités par boîte : ', cs.map(([k, v], i) => [i ? ' ; ' : '', el('b', {text: `${k} ${v.libelle}`}), ` → ${EFF.num(v.u)} (${v.fichier})`])) : null;
-    $('q-res').replaceChildren(cNode || '', hits.length ? el('ul', {}, hits.slice(0, 40).map(({l, c}) => el('li', {}, el('b', {text: `${c.code} ${c.libelle}`}), ` — ${l.nom} (${l.type}, ${EFF.validiteTexte(l)})${l.active === false ? ', désactivée' : ''}`))) : el('p', {text: 'Ce produit ne figure sur aucune liste de produits en sus : il est compté à la charge de l’hôpital (intra-GHS).'}));
+    $('q-res').replaceChildren(cNode || '', res.length ? el('ul', {}, res.slice(0, 40)) : el('p', {text: 'Ce produit ne figure dans aucun relevé de produits remboursés en sus : il est compté à la charge de l’hôpital (intra-GHS).'}));
   }
   $('q').addEventListener('input', search);
 
   /* Publication */
-  $('cancel').addEventListener('click', () => { if (confirm('Annuler toutes les modifications non publiées ?')) { const e = JSON.parse(PUBLIE); LISTES = e.LISTES; COND = e.COND; FCOND = e.FCOND; enEdition = null; refresh(); } });
+  $('cancel').addEventListener('click', () => { if (confirm('Annuler toutes les modifications non publiées ?')) { const e = JSON.parse(PUBLIE); REL = e.REL; COND = e.COND; FCOND = e.FCOND; refresh(); } });
   $('publish').addEventListener('click', async () => {
     $('pub-log').className = 'eff-small'; $('pub-log').textContent = 'Publication…'; $('publish').disabled = true;
     try {
-      await EFF.github(ACCES.github).put('data/referentiels.enc.json', JSON.stringify(await EFF.encrypt({listes: LISTES, conditionnements: COND, fichiersCond: FCOND, maj: new Date().toISOString()}, ACCES.cleRef)), 'Efficience : listes de produits en sus');
+      await EFF.github(ACCES.github).put('data/referentiels.enc.json', JSON.stringify(await EFF.encrypt({releves: REL, conditionnements: COND, fichiersCond: FCOND, maj: new Date().toISOString()}, ACCES.cleRef)), 'Efficience : référentiels administratifs');
       PUBLIE = etat(); $('pub-log').textContent = ''; refresh();
       $('pub-ok').textContent = 'Publié. Toutes les pages de service en tiennent compte d’ici une à deux minutes.';
     } catch (e) { $('pub-log').className = 'eff-err'; $('pub-log').textContent = 'Échec de la publication : ' + EFF.ghError(e); }

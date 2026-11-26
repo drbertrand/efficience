@@ -7,7 +7,7 @@
 <title>Administration — Pharmacien clinicien et efficience</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Literata:opsz,wght@7..72,500;7..72,600&display=swap">
-<link rel="stylesheet" href="assets/style.css?v=202611252000">
+<link rel="stylesheet" href="assets/style.css?v=202611260830">
 </head>
 <body>
 <main class="eff-wrap">
@@ -31,7 +31,7 @@
     <div class="eff-steps">
       <section class="eff-step">
         <h2>1. Référentiels</h2>
-        <p class="eff-note">Les listes de produits remboursés en sus du séjour (hors GHS, LPPR…) sont déposées et datées par les agents administratifs de la pharmacie sur la page <a href="referentiels.html">Référentiels administratifs</a> (mot de passe de l’étape 5). Ici : la correspondance des UF (2 colonnes : code, libellé).</p>
+        <p class="eff-note">Les listes de produits remboursés en sus du séjour (hors GHS, LPPR…) sont déposées chaque mois par les agents administratifs de la pharmacie sur la page <a href="referentiels.html">Référentiels administratifs</a> (mot de passe de l’étape 5). Ici : la correspondance des UF (2 colonnes : code, libellé).</p>
         <div class="eff-grid2">
           <label class="eff-field">Correspondance des UF (.xlsx)<input type="file" accept=".xlsx,.xls,.csv" data-ref="uf"><span class="eff-small" data-ref-info="uf"></span></label>
         </div>
@@ -63,7 +63,7 @@
 
       <section class="eff-step">
         <h2>5. Agents administratifs</h2>
-        <p class="eff-note">Mot de passe de la page <a href="referentiels.html">Référentiels administratifs</a>, où les agents de la pharmacie déposent les listes de produits remboursés en sus du séjour et leurs dates de validité. Il ne donne accès à aucune donnée de consommation.</p>
+        <p class="eff-note">Mot de passe de la page <a href="referentiels.html">Référentiels administratifs</a>, où les agents de la pharmacie déposent chaque mois les listes de produits remboursés en sus du séjour, par mécanisme de remboursement, et le nombre d’unités par boîte. Il ne donne accès à aucune donnée de consommation.</p>
         <div class="eff-grid2"><label class="eff-field">Mot de passe agents<input class="eff-input" type="password" id="ag-pwd" autocomplete="off">
           <span class="eff-row" style="margin-top:4px"><button class="eff-btn ghost" type="button" id="ag-show">Afficher</button><button class="eff-btn ghost" type="button" id="ag-gen">Générer</button></span></label></div>
       </section>
@@ -87,8 +87,8 @@
     <footer class="eff-foot"><a href="./">Accueil</a> · <a href="referentiels.html">Référentiels administratifs</a></footer>
   </div>
 </main>
-<script src="assets/xlsx.full.min.js?v=202611252000"></script>
-<script src="assets/core.js?v=202611252000"></script>
+<script src="assets/xlsx.full.min.js?v=202611260830"></script>
+<script src="assets/core.js?v=202611260830"></script>
 <script>
 (function () {
   'use strict';
