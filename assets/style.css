@@ -201,3 +201,17 @@ td.eff-st-warn { color: #9a5b1e; } td.eff-st-info { color: #3a5683; } td.eff-st-
 /* Lignes remboursées en sus du séjour, et seconde ligne d'un produit dédoublé */
 .eff-table tr.eff-sus td { background: #e1f5ee; color: #085041; }
 .eff-table tr.eff-suite td[data-k=libelle] { padding-left: 18px; }
+
+/* Pages de service : page plus large et tableaux compacts pour tout voir sans défilement horizontal */
+.eff-wrap.eff-large { max-width: 1480px; }
+.eff-pane .eff-table { font-size: .84rem; }
+.eff-pane .eff-table th { white-space: normal; line-height: 1.25; padding: 8px 7px; vertical-align: bottom; }
+.eff-pane .eff-table td { padding: 6px 7px; }
+.eff-pane .eff-table td[data-k=libelle] { min-width: 180px; }
+.eff-pane .eff-table td[data-k=fin], .eff-pane .eff-table td[data-k=periode] { max-width: 170px; font-size: .8rem; line-height: 1.3; }
+.eff-pane .eff-table td[data-k=code], .eff-pane .eff-table td[data-k=ufs], .eff-pane .eff-table td[data-k=famille] { font-size: .8rem; color: var(--muted); }
+.eff-pane .eff-table tr.eff-sus td[data-k=code], .eff-pane .eff-table tr.eff-sus td[data-k=ufs], .eff-pane .eff-table tr.eff-sus td[data-k=famille] { color: inherit; }
+.eff-pane .eff-table td[data-k=rang] { color: var(--muted); }
+.eff-dot-wrap { grid-template-columns: minmax(0, 1fr) 170px; }
+@media (max-width: 1180px) { .eff-pane .eff-table { font-size: .8rem; } .eff-pane .eff-table td, .eff-pane .eff-table th { padding: 5px 5px; } .eff-pane .eff-table td[data-k=libelle] { min-width: 150px; } }
+@media (max-width: 1100px) { .eff-dot-wrap { grid-template-columns: 1fr; } .eff-gauge { position: static; order: -1; grid-template-columns: 34px 1fr 1fr; } .eff-gauge-bar { height: 90px; } .eff-dot-table .eff-table td[data-k=libelle] { min-width: 140px; } }
